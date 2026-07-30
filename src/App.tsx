@@ -9,7 +9,8 @@ import {
   Slide, 
   QuickState, 
   AlertOverlay, 
-  ViewMode 
+  ViewMode,
+  SearchMode 
 } from './types';
 import { INITIAL_SCHEDULE } from './data/mockData';
 import { Navbar } from './components/Navbar';
@@ -23,6 +24,7 @@ import { SongLibraryModal } from './components/SongLibraryModal';
 import { AIMediaGeneratorModal } from './components/AIMediaGeneratorModal';
 import { AlertOverlayModal } from './components/AlertOverlayModal';
 import { StageDisplayView } from './components/StageDisplayView';
+import { PresentationBuilderModal } from './components/PresentationBuilderModal';
 
 export default function App() {
   // Main State
@@ -35,14 +37,28 @@ export default function App() {
   const [alertOverlay, setAlertOverlay] = useState<AlertOverlay | null>(null);
   const [activeViewMode, setActiveViewMode] = useState<ViewMode>('operator');
   const [isMicActive, setIsMicActive] = useState<boolean>(false);
+  const [searchMode, setSearchMode] = useState<SearchMode>('bible');
+  const [searchInitialQuery, setSearchInitialQuery] = useState<string>('');
 
   // Modals state
   const [isSermonModalOpen, setIsSermonModalOpen] = useState(false);
+  const [isPresentationBuilderOpen, setIsPresentationBuilderOpen] = useState(false);
   const [isLiveCompanionOpen, setIsLiveCompanionOpen] = useState(false);
   const [isBibleModalOpen, setIsBibleModalOpen] = useState(false);
   const [isSongModalOpen, setIsSongModalOpen] = useState(false);
   const [isMediaGenOpen, setIsMediaGenOpen] = useState(false);
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
+
+  const openQuickSearchWithMode = useCallback((query: string = '') => {
+    setSearchInitialQuery(query);
+    if (searchMode === 'bible') {
+      setIsBibleModalOpen(true);
+    } else if (searchMode === 'songs') {
+      setIsSongModalOpen(true);
+    } else if (searchMode === 'visuals') {
+      setIsMediaGenOpen(true);
+    }
+  }, [searchMode]);
 
   // Currently selected item
   const currentItem = schedule.find(item => item.id === selectedScheduleId) || null;
@@ -149,6 +165,26 @@ export default function App() {
         return;
       }
 
+      // Check for Slash or Ctrl+K / Cmd+K
+      if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) {
+        e.preventDefault();
+        openQuickSearchWithMode('');
+        return;
+      }
+
+      // Speed Typing Quick Search Trigger
+      if (
+        e.key.length === 1 &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.metaKey &&
+        /[a-zA-Z0-9:\-,."']/i.test(e.key)
+      ) {
+        e.preventDefault();
+        openQuickSearchWithMode(e.key);
+        return;
+      }
+
       switch (e.key) {
         case ' ':
         case 'ArrowRight':
@@ -191,7 +227,8 @@ export default function App() {
     isBibleModalOpen,
     isSongModalOpen,
     isMediaGenOpen,
-    isAlertModalOpen
+    isAlertModalOpen,
+    openQuickSearchWithMode
   ]);
 
   // Schedule Modification Handlers
@@ -346,13 +383,16 @@ export default function App() {
         setQuickState={setQuickState}
         activeViewMode={activeViewMode}
         setActiveViewMode={setActiveViewMode}
+        searchMode={searchMode}
+        setSearchMode={setSearchMode}
         openSermonConverter={() => setIsSermonModalOpen(true)}
         openLiveCompanion={() => setIsLiveCompanionOpen(true)}
-        openBibleLibrary={() => setIsBibleModalOpen(true)}
-        openSongLibrary={() => setIsSongModalOpen(true)}
-        openMediaGenerator={() => setIsMediaGenOpen(true)}
+        openBibleLibrary={() => { setSearchInitialQuery(''); setIsBibleModalOpen(true); }}
+        openSongLibrary={() => { setSearchInitialQuery(''); setIsSongModalOpen(true); }}
+        openMediaGenerator={() => { setSearchInitialQuery(''); setIsMediaGenOpen(true); }}
         openAlertModal={() => setIsAlertModalOpen(true)}
         isMicActive={isMicActive}
+        openQuickSearchWithMode={() => openQuickSearchWithMode('')}
       />
 
       {/* Main Workspace Layout */}
@@ -366,8 +406,10 @@ export default function App() {
             onMoveItem={handleMoveScheduleItem}
             onDeleteItem={handleDeleteScheduleItem}
             openSermonConverter={() => setIsSermonModalOpen(true)}
+            openPresentationBuilder={() => setIsPresentationBuilderOpen(true)}
             openBibleLibrary={() => setIsBibleModalOpen(true)}
             openSongLibrary={() => setIsSongModalOpen(true)}
+            openMediaGenerator={() => setIsMediaGenOpen(true)}
             onAddCustomItem={handleAddCustomScheduleItem}
           />
 
@@ -416,6 +458,13 @@ export default function App() {
         onAddConvertedDeck={handleAddConvertedDeck}
       />
 
+      <PresentationBuilderModal
+        isOpen={isPresentationBuilderOpen}
+        onClose={() => setIsPresentationBuilderOpen(false)}
+        onAddPresentationDeck={handleAddConvertedDeck}
+        onPushSlideToLive={handlePushSlideToLiveDirect}
+      />
+
       <AILiveCompanionDrawer
         isOpen={isLiveCompanionOpen}
         onClose={() => setIsLiveCompanionOpen(false)}
@@ -429,18 +478,22 @@ export default function App() {
         onClose={() => setIsBibleModalOpen(false)}
         onAddScriptureItem={handleAddConvertedDeck}
         onPushSlideToLive={handlePushSlideToLiveDirect}
+        initialQuery={searchInitialQuery}
       />
 
       <SongLibraryModal
         isOpen={isSongModalOpen}
         onClose={() => setIsSongModalOpen(false)}
         onAddSongItem={handleAddConvertedDeck}
+        onPushSlideToLive={handlePushSlideToLiveDirect}
+        initialQuery={searchInitialQuery}
       />
 
       <AIMediaGeneratorModal
         isOpen={isMediaGenOpen}
         onClose={() => setIsMediaGenOpen(false)}
         onApplyBackgroundImage={handleApplyBackgroundImage}
+        initialQuery={searchInitialQuery}
       />
 
       <AlertOverlayModal

@@ -16,14 +16,18 @@ interface SongLibraryModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAddSongItem: (item: ScheduleItem) => void;
+  onPushSlideToLive?: (slide: Slide) => void;
+  initialQuery?: string;
 }
 
 export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
   isOpen,
   onClose,
-  onAddSongItem
+  onAddSongItem,
+  onPushSlideToLive,
+  initialQuery = ''
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [songTitle, setSongTitle] = useState('');
   const [artist, setArtist] = useState('');
@@ -31,6 +35,19 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
   const [ccli, setCcli] = useState('');
   const [rawLyrics, setRawLyrics] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setSearchQuery(initialQuery);
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.setSelectionRange(initialQuery.length, initialQuery.length);
+        }
+      }, 50);
+    }
+  }, [isOpen, initialQuery]);
 
   if (!isOpen) return null;
 
@@ -183,11 +200,12 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
               <input
+                ref={inputRef}
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search songs by title or artist..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 shadow-inner"
               />
             </div>
 

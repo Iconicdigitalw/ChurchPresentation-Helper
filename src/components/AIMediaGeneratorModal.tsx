@@ -13,19 +13,34 @@ interface AIMediaGeneratorModalProps {
   isOpen: boolean;
   onClose: () => void;
   onApplyBackgroundImage: (imageUrl: string) => void;
+  initialQuery?: string;
 }
 
 export const AIMediaGeneratorModal: React.FC<AIMediaGeneratorModalProps> = ({
   isOpen,
   onClose,
-  onApplyBackgroundImage
+  onApplyBackgroundImage,
+  initialQuery = ''
 }) => {
   const [stylePrompt, setStylePrompt] = useState(
-    'Majestic gold and deep navy blue light rays behind subtle cross accent, atmospheric particle glow, widescreen 16:9'
+    initialQuery || 'Majestic gold and deep navy blue light rays behind subtle cross accent, atmospheric particle glow, widescreen 16:9'
   );
   const [isLoading, setIsLoading] = useState(false);
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      if (initialQuery) setStylePrompt(initialQuery);
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(initialQuery.length, initialQuery.length);
+        }
+      }, 50);
+    }
+  }, [isOpen, initialQuery]);
 
   if (!isOpen) return null;
 
@@ -136,10 +151,11 @@ export const AIMediaGeneratorModal: React.FC<AIMediaGeneratorModalProps> = ({
               Custom Visual Prompt
             </label>
             <textarea
+              ref={textareaRef}
               rows={3}
               value={stylePrompt}
               onChange={(e) => setStylePrompt(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-500 leading-relaxed"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-500 leading-relaxed shadow-inner"
             />
           </div>
 

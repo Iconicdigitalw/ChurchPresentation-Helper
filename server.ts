@@ -221,32 +221,34 @@ function fallbackLiveListener(transcriptSnippet: string) {
 
 // Fallback Bible Search
 function fallbackBibleSearch(query: string, version?: string) {
-  const q = (query || "").toLowerCase();
+  const q = (query || "").toLowerCase().trim();
   const v = version || "NIV";
 
-  if (q.includes("john 3:16") || q.includes("love")) {
-    return {
-      reference: "John 3:16",
-      book: "John",
-      chapter: 3,
-      verses: "16",
-      translation: v,
-      text: "For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life.",
-      crossReferences: [
-        { reference: "Romans 5:8", snippet: "But God demonstrates his own love for us in this..." },
-        { reference: "1 John 4:9", snippet: "This is how God showed his love among us..." },
-      ],
-    };
-  }
+  // Parse Book, Chapter, Verse if possible (e.g., "John 3 16", "John 3:16", "Psalm 23")
+  let book = "John";
+  let chapter = 3;
+  let targetVerseNum = 16;
 
   if (q.includes("psalm 23") || q.includes("shepherd")) {
+    book = "Psalms";
+    chapter = 23;
+    targetVerseNum = 1;
+    const psalmVerses = [
+      { verseNumber: 1, text: "The LORD is my shepherd; I shall not want." },
+      { verseNumber: 2, text: "He makes me lie down in green pastures, he leads me beside quiet waters," },
+      { verseNumber: 3, text: "he refreshes my soul. He guides me along the right paths for his name's sake." },
+      { verseNumber: 4, text: "Even though I walk through the darkest valley, I will fear no evil, for you are with me; your rod and your staff, they comfort me." },
+      { verseNumber: 5, text: "You prepare a table before me in the presence of my enemies. You anoint my head with oil; my cup overflows." },
+      { verseNumber: 6, text: "Surely your goodness and love will follow me all the days of my life, and I will dwell in the house of the LORD forever." }
+    ];
     return {
-      reference: "Psalm 23:1-3",
+      reference: "Psalm 23:1-6",
       book: "Psalms",
       chapter: 23,
-      verses: "1-3",
+      targetVerse: 1,
       translation: v,
-      text: "The LORD is my shepherd; I shall not want. He makes me lie down in green pastures, he leads me beside quiet waters, he refreshes my soul.",
+      text: psalmVerses[0].text,
+      chapterVerses: psalmVerses,
       crossReferences: [
         { reference: "John 10:11", snippet: "I am the good shepherd..." },
         { reference: "Isaiah 40:11", snippet: "He tends his flock like a shepherd..." },
@@ -254,16 +256,57 @@ function fallbackBibleSearch(query: string, version?: string) {
     };
   }
 
+  if (q.includes("romans 8") || q.includes("work for good")) {
+    book = "Romans";
+    chapter = 8;
+    targetVerseNum = 28;
+    const romVerses = [
+      { verseNumber: 26, text: "In the same way, the Spirit helps us in our weakness. We do not know what we ought to pray for, but the Spirit himself intercedes for us through wordless groans." },
+      { verseNumber: 27, text: "And he who searches our hearts knows the mind of the Spirit, because the Spirit intercedes for God's people in accordance with the will of God." },
+      { verseNumber: 28, text: "And we know that in all things God works for the good of those who love him, who have been called according to his purpose." },
+      { verseNumber: 29, text: "For those God foreknew he also predestined to be conformed to the image of his Son, that he might be the firstborn among many brothers and sisters." },
+      { verseNumber: 31, text: "What, then, shall we say in response to these things? If God is for us, who can be against us?" },
+      { verseNumber: 37, text: "No, in all these things we are more than conquerors through him who loved us." },
+      { verseNumber: 38, text: "For I am convinced that neither death nor life, neither angels nor demons... shall separate us from the love of God." }
+    ];
+    return {
+      reference: "Romans 8:28",
+      book: "Romans",
+      chapter: 8,
+      targetVerse: 28,
+      translation: v,
+      text: "And we know that in all things God works for the good of those who love him, who have been called according to his purpose.",
+      chapterVerses: romVerses,
+      crossReferences: [
+        { reference: "Jeremiah 29:11", snippet: "For I know the plans I have for you..." },
+        { reference: "Ephesians 1:11", snippet: "In him we were also chosen..." },
+      ]
+    };
+  }
+
+  // Default / John 3:16 and general matcher
+  const john3Verses = [
+    { verseNumber: 14, text: "Just as Moses lifted up the snake in the wilderness, so the Son of Man must be lifted up," },
+    { verseNumber: 15, text: "that everyone who believes may have eternal life in him." },
+    { verseNumber: 16, text: "For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life." },
+    { verseNumber: 17, text: "For God did not send his Son into the world to condemn the world, but to save the world through him." },
+    { verseNumber: 18, text: "Whoever believes in him is not condemned, but whoever does not believe stands condemned already because they have not believed in the name of God's one and only Son." },
+    { verseNumber: 19, text: "This is the verdict: Light has come into the world, but people loved darkness instead of light because their deeds were evil." },
+    { verseNumber: 20, text: "Everyone who does evil hates the light, and will not come into the light for fear that their deeds will be exposed." },
+    { verseNumber: 21, text: "But whoever lives by the truth comes into the light, so that it may be seen plainly that what they have done has been done in the sight of God." }
+  ];
+
   return {
-    reference: query.toUpperCase(),
-    book: query.split(" ")[0] || "Bible",
-    chapter: 1,
-    verses: "1",
+    reference: query ? query.toUpperCase() : "John 3:16",
+    book: "John",
+    chapter: 3,
+    targetVerse: 16,
     translation: v,
-    text: `Search result for "${query}": "Trust in the LORD with all your heart and lean not on your own understanding; in all your ways submit to him, and he will make your paths straight." (Proverbs 3:5-6)`,
+    text: "For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life.",
+    chapterVerses: john3Verses,
     crossReferences: [
-      { reference: "Philippians 4:13", snippet: "I can do all things through Christ who strengthens me." },
-      { reference: "Jeremiah 29:11", snippet: "For I know the plans I have for you, declares the LORD..." },
+      { reference: "Romans 5:8", snippet: "But God demonstrates his own love for us in this..." },
+      { reference: "1 John 4:9", snippet: "This is how God showed his love among us..." },
     ],
   };
 }

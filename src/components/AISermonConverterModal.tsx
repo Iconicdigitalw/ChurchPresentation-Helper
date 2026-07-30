@@ -149,34 +149,34 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden shadow-xl text-slate-800">
+    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl text-slate-100">
         {/* Header */}
-        <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-white">
+        <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-200">
-              <Sparkles className="w-5 h-5 text-indigo-600" />
+            <div className="p-2.5 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <Sparkles className="w-5 h-5 text-amber-400 animate-pulse" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">AI Sermon to Presentation Deck</h2>
-              <p className="text-xs text-slate-500">
-                Transform preaching notes, manuscripts, or Word outlines into slides instantly
+              <h2 className="text-base font-extrabold text-white tracking-tight">AI Document to Presentation Deck</h2>
+              <p className="text-xs text-slate-400">
+                Turn preaching notes, manuscripts, or Word outlines into slides instantly
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar bg-slate-50/50">
+        <div className="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar bg-slate-900/90">
           {errorMessage && (
-            <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+            <div className="p-3.5 bg-rose-950/60 border border-rose-800 rounded-2xl text-rose-300 text-xs flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
               <span>{errorMessage}</span>
             </div>
           )}
@@ -186,14 +186,14 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
               {/* Left Input Area */}
               <div className="lg:col-span-2 space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                  <label className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
                     Sermon Notes / Manuscript Text
                   </label>
                   <button
                     onClick={handleLoadSampleNotes}
-                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+                    className="text-xs font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 hover:underline"
                   >
-                    Load Sample Notes
+                    <span>Load Sample Notes</span>
                   </button>
                 </div>
 
@@ -202,12 +202,12 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
                   value={sermonText}
                   onChange={(e) => setSermonText(e.target.value)}
                   placeholder="Paste preaching outline, pastor notes, or manuscript here..."
-                  className="w-full bg-white border border-slate-300 rounded-xl p-3.5 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 leading-relaxed custom-scrollbar shadow-2xs"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs text-white focus:outline-none focus:border-indigo-500 leading-relaxed custom-scrollbar shadow-inner"
                 />
 
-                <div className="flex items-center justify-between text-xs text-slate-500">
-                  <label className="flex items-center gap-2 cursor-pointer bg-white hover:bg-slate-100 text-slate-700 px-3.5 py-2 rounded-lg border border-slate-300 transition-colors shadow-2xs font-semibold">
-                    <Upload className="w-3.5 h-3.5 text-indigo-600" />
+                <div className="flex items-center justify-between text-xs text-slate-400">
+                  <label className="flex items-center gap-2 cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl border border-slate-700 transition-colors shadow-sm font-semibold">
+                    <Upload className="w-3.5 h-3.5 text-amber-400" />
                     <span>Upload File (.txt, .md)</span>
                     <input
                       type="file"
@@ -221,19 +221,19 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
               </div>
 
               {/* Right Settings */}
-              <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-4 shadow-2xs">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 border-b border-slate-200 pb-2">
-                  Presentation Settings
+              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4 shadow-xl">
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-800 pb-2">
+                  Deck Settings
                 </h3>
 
                 <div>
-                  <label className="text-xs font-semibold text-slate-600 block mb-1">
+                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">
                     Visual Theme Style
                   </label>
                   <select
                     value={themeStyle}
                     onChange={(e) => setThemeStyle(e.target.value as ThemeStyle)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-medium"
                   >
                     <option value="gold-divine">Divine Gold & Dark Amber</option>
                     <option value="nature-serene">Serene Nature Emerald</option>
@@ -245,13 +245,13 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-slate-600 block mb-1">
+                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">
                     Target Slide Count
                   </label>
                   <select
                     value={targetSlideCount}
                     onChange={(e) => setTargetSlideCount(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-medium"
                   >
                     <option value="auto (around 8-12 slides)">Auto AI Choice (8-12 slides)</option>
                     <option value="compact (5-7 slides)">Compact Deck (5-7 slides)</option>
@@ -259,31 +259,31 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
                   </select>
                 </div>
 
-                <div className="p-3.5 bg-indigo-50/60 rounded-xl border border-indigo-100 text-[11px] text-slate-600 leading-relaxed">
-                  <p className="font-bold text-indigo-900 mb-1">✨ What AI will generate:</p>
-                  <ul className="space-y-1 list-disc list-inside text-slate-700 font-medium">
+                <div className="p-3.5 bg-indigo-950/40 rounded-xl border border-indigo-900/50 text-[11px] text-slate-300 leading-relaxed">
+                  <p className="font-extrabold text-amber-400 mb-1">✨ What AI generates:</p>
+                  <ul className="space-y-1 list-disc list-inside text-slate-300 font-medium">
                     <li>Main sermon title slide</li>
-                    <li>Sermon outline & key point slides</li>
-                    <li>Exact Bible scripture lookup slides</li>
-                    <li>Impactful quote lower-third slides</li>
-                    <li>Altar call / response slide</li>
-                    <li>Presenter/Pastor notes for each slide</li>
+                    <li>Outline & point slides</li>
+                    <li>Bible scripture slides</li>
+                    <li>Quote & lower-third slides</li>
+                    <li>Altar response slide</li>
+                    <li>Pastor speaker notes</li>
                   </ul>
                 </div>
 
                 <button
                   onClick={handleGenerate}
                   disabled={isLoading || !sermonText.trim()}
-                  className="w-full py-3 px-4 rounded-xl font-bold text-xs bg-indigo-600 hover:bg-indigo-700 text-white transition-all shadow-xs disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="w-full py-3 px-4 rounded-xl font-extrabold text-xs bg-gradient-to-r from-amber-500 to-indigo-600 hover:from-amber-400 hover:to-indigo-500 text-slate-950 transition-all shadow-lg shadow-amber-950/50 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {isLoading ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin text-white" />
-                      <span>Gemini AI Analyzing Sermon...</span>
+                      <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                      <span>Analyzing Notes...</span>
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-4 h-4 text-white" />
+                      <Sparkles className="w-4 h-4 text-slate-950" />
                       <span>Generate Presentation Deck</span>
                     </>
                   )}
@@ -293,16 +293,16 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
           ) : (
             /* Generated Deck Preview */
             <div className="space-y-4">
-              <div className="p-4 bg-white border border-slate-200 rounded-xl flex items-center justify-between shadow-2xs">
+              <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl flex items-center justify-between shadow-lg">
                 <div>
-                  <h3 className="text-base font-bold text-indigo-900">{previewData.title}</h3>
-                  <p className="text-xs text-slate-500">
+                  <h3 className="text-base font-extrabold text-amber-400">{previewData.title}</h3>
+                  <p className="text-xs text-slate-400">
                     {previewData.subtitle} • {previewData.slides.length} slides generated
                   </p>
                 </div>
                 <button
                   onClick={() => setPreviewData(null)}
-                  className="text-xs font-semibold text-indigo-600 hover:underline"
+                  className="text-xs font-bold text-amber-400 hover:underline"
                 >
                   ← Re-generate
                 </button>
@@ -313,18 +313,18 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
                 {previewData.slides.map((slide, idx) => (
                   <div
                     key={idx}
-                    className="p-4 rounded-xl bg-white border border-slate-200 space-y-2 flex flex-col justify-between shadow-2xs"
+                    className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2 flex flex-col justify-between shadow-md"
                   >
                     <div>
-                      <div className="flex items-center justify-between text-[10px] text-indigo-600 font-bold uppercase mb-1">
+                      <div className="flex items-center justify-between text-[10px] text-indigo-400 font-extrabold uppercase mb-1">
                         <span>Slide #{idx + 1} ({slide.type})</span>
-                        {slide.reference && <span className="text-slate-500">{slide.reference}</span>}
+                        {slide.reference && <span className="text-amber-300">{slide.reference}</span>}
                       </div>
-                      <h4 className="text-xs font-bold text-slate-800">{slide.header}</h4>
-                      <p className="text-xs text-slate-600 mt-1 line-clamp-3 leading-relaxed">{slide.body}</p>
+                      <h4 className="text-xs font-extrabold text-white">{slide.header}</h4>
+                      <p className="text-xs text-slate-300 mt-1 line-clamp-3 leading-relaxed">{slide.body}</p>
                     </div>
                     {slide.speakerNotes && (
-                      <div className="text-[10px] text-slate-400 border-t border-slate-100 pt-1.5 mt-2">
+                      <div className="text-[10px] text-slate-400 border-t border-slate-900 pt-2 mt-2">
                         Notes: {slide.speakerNotes}
                       </div>
                     )}
@@ -337,20 +337,20 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
 
         {/* Footer */}
         {previewData && (
-          <div className="p-4 border-t border-slate-200 bg-white flex items-center justify-between">
-            <span className="text-xs text-slate-500 font-medium">
-              Ready to push to Sunday Service Schedule
+          <div className="p-4 border-t border-slate-800 bg-slate-950 flex items-center justify-between">
+            <span className="text-xs text-slate-400 font-medium">
+              Ready to insert into Sunday Worship Schedule
             </span>
             <div className="flex gap-2">
               <button
                 onClick={() => setPreviewData(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700"
               >
                 Back to Edit
               </button>
               <button
                 onClick={handleConfirmInsert}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs flex items-center gap-1.5"
+                className="px-5 py-2 rounded-xl text-xs font-extrabold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg flex items-center gap-1.5"
               >
                 <Check className="w-4 h-4" />
                 <span>Add Deck to Schedule</span>
