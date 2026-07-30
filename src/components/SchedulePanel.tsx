@@ -17,15 +17,21 @@ import {
   Sparkles,
   ListOrdered,
   Image as ImageIcon,
-  Layers
+  Layers,
+  GripVertical,
+  Settings
 } from 'lucide-react';
 
 interface SchedulePanelProps {
   schedule: ScheduleItem[];
   selectedScheduleId: string | null;
+  liveSlideId?: string | null;
+  isLiveOutputOn?: boolean;
   onSelectScheduleItem: (id: string) => void;
   onMoveItem: (index: number, direction: 'up' | 'down') => void;
+  onReorderItems?: (fromIndex: number, toIndex: number) => void;
   onDeleteItem: (id: string) => void;
+  onOpenSettingsModal?: (item: ScheduleItem) => void;
   openSermonConverter: () => void;
   openPresentationBuilder: () => void;
   openBibleLibrary: () => void;
@@ -37,9 +43,13 @@ interface SchedulePanelProps {
 export const SchedulePanel: React.FC<SchedulePanelProps> = ({
   schedule,
   selectedScheduleId,
+  liveSlideId,
+  isLiveOutputOn = true,
   onSelectScheduleItem,
   onMoveItem,
+  onReorderItems,
   onDeleteItem,
+  onOpenSettingsModal,
   openSermonConverter,
   openPresentationBuilder,
   openBibleLibrary,
@@ -48,6 +58,8 @@ export const SchedulePanel: React.FC<SchedulePanelProps> = ({
   onAddCustomItem
 }) => {
   const [filterType, setFilterType] = useState<string>('all');
+  const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
   const getItemIcon = (type: ScheduleItemType) => {
     switch (type) {
@@ -68,10 +80,31 @@ export const SchedulePanel: React.FC<SchedulePanelProps> = ({
 
   const filteredSchedule = schedule.filter(item => {
     if (filterType === 'all') return true;
-    if (filterType === 'visuals') return item.type === 'video' || item.slides.some(s => s.type === 'video' || s.bgImageUrl);
-    if (filterType === 'decks') return item.type === 'sermon' || item.type === 'custom' || item.slides.length > 1;
+    if (filterType === 'song') return item.type === 'song';
+    if (filterType === 'scripture') return item.type === 'scripture';
+    if (filterType === 'visuals') return item.type === 'video' || item.slides.some(s => s.type === 'video');
+    if (filterType === 'decks') return item.type === 'sermon' || item.type === 'announcement' || item.type === 'custom';
     return item.type === filterType;
   });
+
+  const liveItem = isLiveOutputOn && liveSlideId ? schedule.find(item => item.slides.some(s => s.id === liveSlideId)) : null;
+
+  const isCategoryLive = (cat: string) => {
+    if (!liveItem) return false;
+    if (cat === 'all') return false;
+    if (cat === 'song') return liveItem.type === 'song';
+    if (cat === 'scripture') return liveItem.type === 'scripture';
+    if (cat === 'visuals') return liveItem.type === 'video' || liveItem.slides.some(s => s.type === 'video');
+    if (cat === 'decks') return liveItem.type === 'sermon' || liveItem.type === 'announcement' || liveItem.type === 'custom';
+    return false;
+  };
+
+  const renderLiveDot = () => (
+    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 z-20 pointer-events-none">
+      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-90" />
+      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 ring-2 ring-slate-950 shadow-sm shadow-rose-500/80" />
+    </span>
+  );
 
   return (
     <aside className="w-full lg:w-72 bg-slate-900 border-r border-slate-800 flex flex-col h-full shrink-0 select-none text-slate-100 relative z-10">
@@ -97,47 +130,51 @@ export const SchedulePanel: React.FC<SchedulePanelProps> = ({
                 : 'bg-slate-900 hover:bg-slate-800 text-slate-400'
             }`}
           >
-            All
+            <span>All</span>
           </button>
           <button
             onClick={() => setFilterType('song')}
-            className={`px-2 py-1 rounded-md transition-colors ${
+            className={`relative px-2 py-1 rounded-md transition-colors ${
               filterType === 'song'
                 ? 'bg-purple-600 text-white font-bold'
                 : 'bg-slate-900 hover:bg-slate-800 text-slate-400'
             }`}
           >
-            Songs
+            <span>Songs</span>
+            {isCategoryLive('song') && renderLiveDot()}
           </button>
           <button
             onClick={() => setFilterType('decks')}
-            className={`px-2 py-1 rounded-md transition-colors ${
+            className={`relative px-2 py-1 rounded-md transition-colors ${
               filterType === 'decks'
                 ? 'bg-amber-600 text-slate-950 font-bold'
                 : 'bg-slate-900 hover:bg-slate-800 text-slate-400'
             }`}
           >
-            Decks
+            <span>Decks</span>
+            {isCategoryLive('decks') && renderLiveDot()}
           </button>
           <button
             onClick={() => setFilterType('scripture')}
-            className={`px-2 py-1 rounded-md transition-colors ${
+            className={`relative px-2 py-1 rounded-md transition-colors ${
               filterType === 'scripture'
                 ? 'bg-blue-600 text-white font-bold'
                 : 'bg-slate-900 hover:bg-slate-800 text-slate-400'
             }`}
           >
-            Bible
+            <span>Bible</span>
+            {isCategoryLive('scripture') && renderLiveDot()}
           </button>
           <button
             onClick={() => setFilterType('visuals')}
-            className={`px-2 py-1 rounded-md transition-colors ${
+            className={`relative px-2 py-1 rounded-md transition-colors ${
               filterType === 'visuals'
                 ? 'bg-emerald-600 text-white font-bold'
                 : 'bg-slate-900 hover:bg-slate-800 text-slate-400'
             }`}
           >
-            Visuals
+            <span>Visuals</span>
+            {isCategoryLive('visuals') && renderLiveDot()}
           </button>
         </div>
       </div>
@@ -154,30 +191,110 @@ export const SchedulePanel: React.FC<SchedulePanelProps> = ({
           filteredSchedule.map((item, idx) => {
             const isSelected = item.id === selectedScheduleId;
             const originalIndex = schedule.findIndex(s => s.id === item.id);
+            const isBeingDragged = draggedIdx === originalIndex;
+            const isBeingDraggedOver = dragOverIdx === originalIndex;
+            const hasLiveSlide = Boolean(liveSlideId && isLiveOutputOn && item.slides.some(s => s.id === liveSlideId));
 
             return (
               <div
                 key={item.id}
+                draggable={true}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/plain', String(originalIndex));
+                  setDraggedIdx(originalIndex);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  if (dragOverIdx !== originalIndex) {
+                    setDragOverIdx(originalIndex);
+                  }
+                }}
+                onDragLeave={() => {
+                  if (dragOverIdx === originalIndex) {
+                    setDragOverIdx(null);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const fromIdxStr = e.dataTransfer.getData('text/plain');
+                  const fromIdx = parseInt(fromIdxStr, 10);
+                  if (!isNaN(fromIdx) && fromIdx !== originalIndex) {
+                    if (onReorderItems) {
+                      onReorderItems(fromIdx, originalIndex);
+                    } else {
+                      // Fallback using onMoveItem
+                      const diff = originalIndex - fromIdx;
+                      const dir = diff > 0 ? 'down' : 'up';
+                      for (let i = 0; i < Math.abs(diff); i++) {
+                        onMoveItem(fromIdx, dir);
+                      }
+                    }
+                  }
+                  setDraggedIdx(null);
+                  setDragOverIdx(null);
+                }}
+                onDragEnd={() => {
+                  setDraggedIdx(null);
+                  setDragOverIdx(null);
+                }}
                 onClick={() => onSelectScheduleItem(item.id)}
-                className={`group relative flex items-center justify-between p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                  isSelected
-                    ? 'bg-indigo-950/60 border-indigo-500/80 text-white shadow-lg shadow-indigo-950/50 ring-1 ring-indigo-500/40'
+                className={`group relative flex items-center justify-between p-2.5 rounded-xl border text-left transition-all cursor-pointer select-none ${
+                  isBeingDragged
+                    ? 'opacity-30 border-dashed border-indigo-500 bg-indigo-950/20'
+                    : isBeingDraggedOver
+                    ? 'border-indigo-400 bg-indigo-950/80 ring-2 ring-indigo-500 shadow-xl scale-[1.02]'
+                    : hasLiveSlide
+                    ? isSelected
+                      ? 'bg-indigo-950/70 border-rose-500/90 ring-2 ring-rose-500/50 shadow-lg shadow-rose-950/50 text-white'
+                      : 'bg-slate-900/95 border-rose-500/80 ring-1 ring-rose-500/40 shadow-md shadow-rose-950/30 text-white'
+                    : isSelected
+                    ? 'bg-emerald-950/60 border-emerald-500/80 text-white shadow-lg shadow-emerald-950/50 ring-1 ring-emerald-500/40'
                     : 'bg-slate-900/90 border-slate-800/80 hover:border-slate-700 hover:bg-slate-800/90 text-slate-300'
                 }`}
               >
-                {/* Left Info */}
-                <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                {/* Left Info with Drag Handle & Hover Gear */}
+                <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                  {/* Drag Handle Icon & Gear Settings underneath */}
+                  <div className="flex flex-col items-center gap-1 shrink-0 mt-0.5">
+                    <div 
+                      className="text-slate-600 group-hover:text-amber-400 cursor-grab active:cursor-grabbing p-0.5 rounded transition-colors"
+                      title="Drag up or down to reorder schedule"
+                    >
+                      <GripVertical className="w-4 h-4" />
+                    </div>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenSettingsModal?.(item);
+                      }}
+                      className="p-0.5 text-amber-400 hover:text-amber-300 hover:bg-slate-800 rounded transition-all opacity-0 group-hover:opacity-100"
+                      title="Schedule Item Settings & Slide Manager"
+                    >
+                      <Settings className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
                   <div className="mt-0.5 p-1.5 rounded-lg bg-slate-950 border border-slate-800 shrink-0">
                     {getItemIcon(item.type)}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-extrabold text-slate-500">
-                        #{originalIndex + 1}
-                      </span>
-                      <h4 className="text-xs font-bold truncate leading-tight text-slate-100">
-                        {item.title}
-                      </h4>
+                    <div className="flex items-center gap-1.5 justify-between pr-1">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[10px] font-extrabold text-slate-500">
+                          #{originalIndex + 1}
+                        </span>
+                        <h4 className="text-xs font-bold truncate leading-tight text-slate-100">
+                          {item.title}
+                        </h4>
+                      </div>
+                      {hasLiveSlide && (
+                        <span className="flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-rose-600 text-white tracking-widest uppercase shadow-md shadow-rose-950/80 animate-pulse shrink-0 border border-rose-400/50">
+                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                          LIVE
+                        </span>
+                      )}
                     </div>
 
                     {item.subtitle && (

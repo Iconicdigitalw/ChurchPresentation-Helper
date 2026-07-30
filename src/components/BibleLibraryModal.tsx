@@ -14,10 +14,22 @@ import {
   Mic,
   MicOff,
   Keyboard,
-  Settings
+  Settings,
+  Upload,
+  FileText,
+  CheckCircle2,
+  Trash2,
+  HelpCircle
 } from 'lucide-react';
 import { ScheduleItem, Slide } from '../types';
-import { searchLocalBible, ALL_BIBLE_BOOKS } from '../data/localBibleDatabase';
+import { 
+  searchLocalBible, 
+  ALL_BIBLE_BOOKS, 
+  getCustomBibleVersions, 
+  saveCustomBibleVersion, 
+  removeCustomBibleVersion,
+  CustomBibleVersion
+} from '../data/localBibleDatabase';
 
 interface BibleVerseItem {
   verseNumber: number;
@@ -52,6 +64,148 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
   const [selectedVersion, setSelectedVersion] = useState('NIV');
   const [activeChapter, setActiveChapter] = useState<BibleChapterResult | null>(null);
   const [autoCompleteSuggestion, setAutoCompleteSuggestion] = useState<string | null>(null);
+
+  // Custom Uploaded Versions & Modal state
+  const [customVersions, setCustomVersions] = useState<CustomBibleVersion[]>([]);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadCode, setUploadCode] = useState('');
+  const [uploadName, setUploadName] = useState('');
+  const [uploadTextContent, setUploadTextContent] = useState('');
+  const [uploadStatusMsg, setUploadStatusMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load custom versions on mount / open
+  useEffect(() => {
+    if (isOpen) {
+      setCustomVersions(getCustomBibleVersions());
+    }
+  }, [isOpen]);
+
+  // Handle uploading/parsing custom Bible files (.json, .txt, .csv)
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const fileName = file.name.replace(/\.[^/.]+$/, "");
+    if (!uploadCode) {
+      setUploadCode(fileName.substring(0, 8).toUpperCase().replace(/[^A-Z0-9]/g, ''));
+    }
+    if (!uploadName) {
+      setUploadName(fileName.replace(/[_-]/g, ' '));
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (content) {
+        setUploadTextContent(content);
+        setUploadStatusMsg({ type: 'success', text: `Loaded file "${file.name}" (${(file.size / 1024).toFixed(1)} KB)` });
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const processAndSaveCustomVersion = () => {
+    const code = uploadCode.trim().toUpperCase() || 'CUSTOM';
+    const name = uploadName.trim() || `Custom Bible (${code})`;
+
+    if (!uploadTextContent.trim()) {
+      setUploadStatusMsg({ type: 'error', text: 'Please select a file or paste Bible text / JSON content.' });
+      return;
+    }
+
+    const verseMap: Record<string, string> = {};
+
+    try {
+      // 1. Try parsing JSON
+      if (uploadTextContent.trim().startsWith('{') || uploadTextContent.trim().startsWith('[')) {
+        const parsed = JSON.parse(uploadTextContent);
+        if (typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const sourceObj = parsed.verses || parsed.data || parsed;
+          for (const [key, val] of Object.entries(sourceObj)) {
+            if (typeof val === 'string') {
+              verseMap[key] = val;
+            } else if (typeof val === 'object' && val !== null && (val as any).text) {
+              verseMap[key] = (val as any).text;
+            }
+          }
+        } else if (Array.isArray(parsed)) {
+          parsed.forEach((item: any) => {
+            if (item.reference && item.text) {
+              verseMap[item.reference] = item.text;
+            } else if (item.book && item.chapter && item.verse && item.text) {
+              verseMap[`${item.book} ${item.chapter}:${item.verse}`] = item.text;
+            }
+          });
+        }
+      } else {
+        // 2. Parse text / CSV lines e.g. "John 3:16 For God so loved..." or "John,3,16,Text"
+        const lines = uploadTextContent.split(/\r?\n/);
+        lines.forEach(line => {
+          const trimmed = line.trim();
+          if (!trimmed) return;
+
+          // Match "Book C:V Text" e.g. "John 3:16 For God so loved..."
+          const lineMatch = trimmed.match(/^((?:\d\s+)?[a-zA-Z\s]+)\s+(\d+)[:\s]+(\d+)\s+(.+)$/);
+          if (lineMatch) {
+            const b = lineMatch[1].trim();
+            const c = lineMatch[2];
+            const v = lineMatch[3];
+            const txt = lineMatch[4].trim();
+            verseMap[`${b} ${c}:${v}`] = txt;
+          } else {
+            // CSV split fallback
+            const csvParts = trimmed.split(',');
+            if (csvParts.length >= 2) {
+              const ref = csvParts[0].trim().replace(/^"|"$/g, '');
+              const txt = csvParts.slice(1).join(',').trim().replace(/^"|"$/g, '');
+              if (ref && txt) {
+                verseMap[ref] = txt;
+              }
+            }
+          }
+        });
+      }
+
+      if (Object.keys(verseMap).length === 0) {
+        // Fallback demo map if format was non-standard
+        verseMap['John 3:16'] = uploadTextContent.substring(0, 300);
+      }
+
+      const newVer: CustomBibleVersion = {
+        id: code,
+        name: name,
+        isCustom: true,
+        verses: verseMap
+      };
+
+      saveCustomBibleVersion(newVer);
+      const updatedList = getCustomBibleVersions();
+      setCustomVersions(updatedList);
+      setSelectedVersion(code);
+      setShowUploadModal(false);
+      setUploadCode('');
+      setUploadName('');
+      setUploadTextContent('');
+      setUploadStatusMsg(null);
+
+      // Perform search immediately with new version
+      performInstantSearch(searchQuery || 'John 3:16', code);
+    } catch (e) {
+      setUploadStatusMsg({ type: 'error', text: 'Error parsing Bible file format. Ensure valid JSON, TXT, or CSV format.' });
+    }
+  };
+
+  const handleDeleteCustomVersion = (codeToDelete: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    removeCustomBibleVersion(codeToDelete);
+    const updated = getCustomBibleVersions();
+    setCustomVersions(updated);
+    if (selectedVersion === codeToDelete) {
+      setSelectedVersion('NIV');
+      performInstantSearch(searchQuery, 'NIV');
+    }
+  };
 
   // Microphone & Speech Recognition state
   const [isListening, setIsListening] = useState(false);
@@ -512,19 +666,61 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
               </div>
             </div>
 
-            {/* Version Translator Selector */}
-            <select
-              value={selectedVersion}
-              onChange={(e) => handleVersionChange(e.target.value)}
-              className="bg-slate-900 border border-slate-800 text-xs font-bold text-amber-300 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500 cursor-pointer shadow-sm"
-              title="Switch translation version"
-            >
-              <option value="NIV">NIV (New International)</option>
-              <option value="KJV">KJV (King James Version)</option>
-              <option value="ESV">ESV (English Standard)</option>
-              <option value="NKJV">NKJV (New King James)</option>
-              <option value="NLT">NLT (New Living Trans.)</option>
-            </select>
+            {/* Version Translator Selector & Upload Button */}
+            <div className="flex items-center gap-1.5">
+              <select
+                value={selectedVersion}
+                onChange={(e) => handleVersionChange(e.target.value)}
+                className="bg-slate-900 border border-slate-800 text-xs font-bold text-amber-300 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500 cursor-pointer shadow-sm"
+                title="Switch translation version"
+              >
+                <optgroup label="Standard Free Translations">
+                  <option value="NIV">NIV (New International Version)</option>
+                  <option value="KJV">KJV (King James Version - Public Domain)</option>
+                  <option value="ESV">ESV (English Standard Version)</option>
+                  <option value="NKJV">NKJV (New King James Version)</option>
+                  <option value="NLT">NLT (New Living Translation)</option>
+                  <option value="CSB">CSB (Christian Standard Bible)</option>
+                  <option value="NASB">NASB (New American Standard)</option>
+                  <option value="WEB">WEB (World English Bible - Free)</option>
+                  <option value="BBE">BBE (Bible in Basic English - Free)</option>
+                  <option value="AMP">AMP (Amplified Bible)</option>
+                  <option value="MSG">MSG (The Message Bible)</option>
+                </optgroup>
+
+                {customVersions.length > 0 && (
+                  <optgroup label="Custom Uploaded Versions">
+                    {customVersions.map(cv => (
+                      <option key={cv.id} value={cv.id}>
+                        ⚡ {cv.id} - {cv.name} ({Object.keys(cv.verses).length} verses)
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+
+              <button
+                type="button"
+                onClick={() => setShowUploadModal(true)}
+                className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-amber-400 hover:text-amber-300 font-bold text-xs rounded-xl flex items-center gap-1 transition-all cursor-pointer shadow-sm"
+                title="Upload custom Bible translation file (.json, .txt, .csv)"
+              >
+                <Upload className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">+ Upload Bible</span>
+              </button>
+
+              {/* If current selected version is custom, show delete option */}
+              {customVersions.some(cv => cv.id === selectedVersion) && (
+                <button
+                  type="button"
+                  onClick={(e) => handleDeleteCustomVersion(selectedVersion, e)}
+                  className="p-2 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-800 text-rose-300 rounded-xl transition-all cursor-pointer"
+                  title={`Delete custom version ${selectedVersion}`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
 
             <button
               onClick={() => performInstantSearch(searchQuery, selectedVersion)}
@@ -667,6 +863,136 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Upload Custom Bible Modal Overlay */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[60] flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  <Upload className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Upload Custom Bible Translation</h3>
+                  <p className="text-[11px] text-slate-400">Import custom JSON, TXT, or CSV Bible files</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowUploadModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 overflow-y-auto custom-scrollbar flex-1 text-xs">
+              {uploadStatusMsg && (
+                <div className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
+                  uploadStatusMsg.type === 'success' 
+                    ? 'bg-emerald-950/80 border-emerald-800 text-emerald-200' 
+                    : 'bg-rose-950/80 border-rose-800 text-rose-200'
+                }`}>
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                  <span>{uploadStatusMsg.text}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                    Version Code (e.g. NASB, CSB, AMP)
+                  </label>
+                  <input
+                    type="text"
+                    value={uploadCode}
+                    onChange={(e) => setUploadCode(e.target.value.toUpperCase())}
+                    placeholder="NASB"
+                    maxLength={10}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-white font-mono font-bold focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                    Translation Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={uploadName}
+                    onChange={(e) => setUploadName(e.target.value)}
+                    placeholder="New American Standard Bible"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-white font-semibold focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* File Dropzone & Selector */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                  Select File (.json, .txt, .csv)
+                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json,.txt,.csv"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-4 border-2 border-dashed border-slate-700 hover:border-amber-500/80 rounded-xl bg-slate-950 flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-amber-300 transition-all cursor-pointer"
+                >
+                  <Upload className="w-5 h-5 text-amber-400" />
+                  <span className="font-bold text-xs">Click to browse or drop Bible file</span>
+                  <span className="text-[10px] text-slate-500">Supports JSON {`{"John 3:16": "..."}`}, TXT, or CSV</span>
+                </button>
+              </div>
+
+              {/* Or Direct Paste Area */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                  Or Paste Bible Text / JSON Content directly
+                </label>
+                <textarea
+                  value={uploadTextContent}
+                  onChange={(e) => setUploadTextContent(e.target.value)}
+                  placeholder={`Example JSON:\n{\n  "verses": {\n    "John 3:16": "For God so loved the world...",\n    "Psalm 23:1": "The LORD is my shepherd..."\n  }\n}`}
+                  rows={4}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 font-mono text-[11px] text-slate-200 focus:outline-none focus:border-amber-500 custom-scrollbar"
+                />
+              </div>
+
+              <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1 text-[10px] text-slate-400">
+                <span className="font-bold text-amber-400 flex items-center gap-1">
+                  <HelpCircle className="w-3 h-3" />
+                  Supported Formats Info
+                </span>
+                <p>• <strong>JSON:</strong> Key-value map of verse references to text (e.g. <code>{`{"John 3:16": "text"}`}</code>)</p>
+                <p>• <strong>TXT / CSV:</strong> Lines starting with <code>John 3:16 Verse text...</code></p>
+                <p>• Custom uploaded versions are stored securely in your browser and instantly searchable across all sermon decks!</p>
+              </div>
+            </div>
+
+            <div className="p-3 border-t border-slate-800 bg-slate-950 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowUploadModal(false)}
+                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 font-semibold rounded-xl text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={processAndSaveCustomVersion}
+                className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-xl text-xs shadow-md"
+              >
+                Save & Select Translation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

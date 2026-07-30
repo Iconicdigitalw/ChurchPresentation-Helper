@@ -6,22 +6,34 @@ import {
   BookOpen, 
   Music, 
   Image as ImageIcon, 
+  Presentation,
   Play, 
   Square, 
   AlertCircle, 
   Clock, 
   ExternalLink,
   Layers,
-  Settings,
+  Settings as SettingsIcon,
   Flame,
   HelpCircle,
   X,
   Radio,
   Keyboard,
   Search,
-  Zap
+  Zap,
+  ChevronDown,
+  RotateCcw,
+  Check,
+  MousePointer
 } from 'lucide-react';
 import { QuickState, ViewMode, SearchMode } from '../types';
+import { 
+  ShortcutBinding, 
+  DEFAULT_SHORTCUTS, 
+  saveShortcuts, 
+  AppSettings, 
+  saveAppSettings 
+} from '../data/settingsAndTemplates';
 
 interface NavbarProps {
   isLiveOutputOn: boolean;
@@ -40,6 +52,11 @@ interface NavbarProps {
   openAlertModal: () => void;
   isMicActive: boolean;
   openQuickSearchWithMode: () => void;
+  // New props for shortcut and slide activation settings
+  slideActivationMode: 'double_click' | 'single_click';
+  setSlideActivationMode: (mode: 'double_click' | 'single_click') => void;
+  shortcuts: ShortcutBinding[];
+  setShortcuts: React.Dispatch<React.SetStateAction<ShortcutBinding[]>>;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -58,9 +75,44 @@ export const Navbar: React.FC<NavbarProps> = ({
   openMediaGenerator,
   openAlertModal,
   isMicActive,
-  openQuickSearchWithMode
+  openQuickSearchWithMode,
+  slideActivationMode,
+  setSlideActivationMode,
+  shortcuts,
+  setShortcuts
 }) => {
-  const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'shortcuts' | 'triggers'>('shortcuts');
+  const [editingShortcutId, setEditingShortcutId] = useState<string | null>(null);
+  const [keyBuffer, setKeyBuffer] = useState('');
+
+  const handleStartEditShortcut = (id: string) => {
+    setEditingShortcutId(id);
+    setKeyBuffer('');
+  };
+
+  const handleSaveKeyForShortcut = (id: string, newKey: string) => {
+    if (!newKey.trim()) return;
+    const updated = shortcuts.map(s => s.id === id ? { ...s, key: newKey.trim() } : s);
+    setShortcuts(updated);
+    saveShortcuts(updated);
+    setEditingShortcutId(null);
+    setKeyBuffer('');
+  };
+
+  const handleResetShortcuts = () => {
+    setShortcuts(DEFAULT_SHORTCUTS);
+    saveShortcuts(DEFAULT_SHORTCUTS);
+  };
+
+  const handleToggleSlideTrigger = (mode: 'double_click' | 'single_click') => {
+    setSlideActivationMode(mode);
+    saveAppSettings({
+      slideActivationMode: mode,
+      autoLiveSearchOnlineSongs: true,
+      stageDisplayFontSize: 'large'
+    });
+  };
 
   return (
     <>
@@ -80,79 +132,89 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Search Mode Selector (Speed Typing Active Mode) */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 p-1 rounded-xl shadow-inner">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 pl-2 pr-1 hidden xl:flex items-center gap-1">
-              <Zap className="w-3 h-3 text-amber-400" />
-              Search Mode:
+        {/* Search Mode Selector Dropdown & Speed Search Unit */}
+        <div className="flex items-center gap-1.5 bg-slate-950/80 border border-slate-800/80 p-1 rounded-2xl shadow-inner backdrop-blur-sm">
+          <div className="flex items-center gap-1.5 pl-2 pr-1">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 hidden sm:flex items-center gap-1">
+              <Zap className="w-3 h-3 text-amber-400 fill-amber-400/20" />
+              <span>Search Mode:</span>
             </span>
 
-            <button
-              onClick={() => setSearchMode('bible')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                searchMode === 'bible'
-                  ? 'bg-blue-600 text-white shadow-md ring-1 ring-blue-400'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
-              title="Search Mode: Bible. Typing anywhere automatically searches scriptures."
-            >
-              <BookOpen className="w-3.5 h-3.5 text-blue-300" />
-              <span>Bible</span>
-            </button>
+            <div className="relative flex items-center">
+              {searchMode === 'bible' && <BookOpen className="w-3.5 h-3.5 text-blue-300 absolute left-2.5 pointer-events-none z-10" />}
+              {searchMode === 'songs' && <Music className="w-3.5 h-3.5 text-purple-300 absolute left-2.5 pointer-events-none z-10" />}
+              {searchMode === 'visuals' && <ImageIcon className="w-3.5 h-3.5 text-emerald-300 absolute left-2.5 pointer-events-none z-10" />}
+              {searchMode === 'deck' && <Presentation className="w-3.5 h-3.5 text-amber-300 absolute left-2.5 pointer-events-none z-10" />}
 
-            <button
-              onClick={() => setSearchMode('songs')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                searchMode === 'songs'
-                  ? 'bg-purple-600 text-white shadow-md ring-1 ring-purple-400'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
-              title="Search Mode: Songs. Typing anywhere automatically searches songs."
-            >
-              <Music className="w-3.5 h-3.5 text-purple-300" />
-              <span>Songs</span>
-            </button>
+              <select
+                value={searchMode}
+                onChange={(e) => setSearchMode(e.target.value as SearchMode)}
+                className={`pl-8 pr-7 py-1 rounded-xl text-xs font-bold transition-all appearance-none cursor-pointer focus:outline-none border ${
+                  searchMode === 'bible'
+                    ? 'bg-blue-600/90 hover:bg-blue-600 text-white border-blue-400/80 shadow-md shadow-blue-950/40'
+                    : searchMode === 'songs'
+                    ? 'bg-purple-600/90 hover:bg-purple-600 text-white border-purple-400/80 shadow-md shadow-purple-950/40'
+                    : searchMode === 'visuals'
+                    ? 'bg-emerald-600/90 hover:bg-emerald-600 text-white border-emerald-400/80 shadow-md shadow-emerald-950/40'
+                    : 'bg-amber-600/90 hover:bg-amber-600 text-slate-950 border-amber-400/80 shadow-md shadow-amber-950/40'
+                }`}
+                title="Select Search Mode: Bible, Songs, Visuals, or Deck"
+              >
+                <option value="bible" className="bg-slate-900 text-blue-300 font-bold py-1">
+                  Bible Mode
+                </option>
+                <option value="songs" className="bg-slate-900 text-purple-300 font-bold py-1">
+                  Songs Mode
+                </option>
+                <option value="visuals" className="bg-slate-900 text-emerald-300 font-bold py-1">
+                  Visuals Mode
+                </option>
+                <option value="deck" className="bg-slate-900 text-amber-300 font-bold py-1">
+                  Deck / Slideshow Mode
+                </option>
+              </select>
 
-            <button
-              onClick={() => setSearchMode('visuals')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                searchMode === 'visuals'
-                  ? 'bg-emerald-600 text-white shadow-md ring-1 ring-emerald-400'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
-              title="Search Mode: Visuals. Typing anywhere automatically opens AI Visuals Generator."
-            >
-              <ImageIcon className="w-3.5 h-3.5 text-emerald-300" />
-              <span>Visuals</span>
-            </button>
+              <ChevronDown className="w-3.5 h-3.5 text-white/80 absolute right-2 pointer-events-none z-10" />
+            </div>
           </div>
+
+          <div className="w-[1px] h-4 bg-slate-800 hidden md:block" />
 
           {/* Speed-Typing Trigger Button */}
           <button
             onClick={openQuickSearchWithMode}
-            className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 text-slate-300 hover:text-amber-300 text-xs font-semibold transition-all shadow-sm"
+            className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800/60 hover:border-amber-500/40 text-slate-300 hover:text-amber-300 text-xs font-semibold transition-all shadow-inner"
             title="Start typing anytime to trigger quick search mode"
           >
             <Search className="w-3.5 h-3.5 text-amber-400" />
             <span className="text-[11px]">Type to Search</span>
-            <kbd className="text-[9px] bg-slate-800 border border-slate-700 text-slate-400 px-1.5 py-0.5 rounded font-mono">
-              Type or /
+            <kbd className="text-[9px] bg-slate-950 border border-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">
+              /
             </kbd>
           </button>
         </div>
 
-        {/* AI Tools Bar */}
-        <div className="flex items-center gap-2 overflow-x-auto py-0.5 custom-scrollbar">
+        {/* Right Toolbar Controls: Keyboard Shortcuts, Info Alert, AI Live Listener on Extreme Right */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Settings & Keyboard Shortcuts */}
           <button
-            onClick={openSermonConverter}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500/20 to-amber-600/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition-all shadow-md shrink-0"
-            title="Convert Pastor Notes / Word Docs into Slide Decks instantly with AI"
+            onClick={() => setShowSettingsModal(true)}
+            className="p-2 text-slate-400 bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-xl transition-all"
+            title="Customizable Keyboard Shortcuts & Trigger Settings"
           >
-            <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-            <span>AI Sermon Deck</span>
+            <Keyboard className="w-4.5 h-4.5 text-indigo-400" />
           </button>
 
+          {/* Quick Alert Generator / Info Icon */}
+          <button
+            onClick={openAlertModal}
+            className="p-2 text-amber-400 bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:border-amber-500/50 rounded-xl transition-all shadow-sm"
+            title="Send Stage Alert / Nursery Calling / Banner"
+          >
+            <AlertCircle className="w-4.5 h-4.5" />
+          </button>
+
+          {/* AI Live Listener at extreme right */}
           <button
             onClick={openLiveCompanion}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 ${
@@ -167,121 +229,213 @@ export const Navbar: React.FC<NavbarProps> = ({
             {isMicActive && <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />}
           </button>
         </div>
-
-        {/* Presentation Controls & Master Indicators */}
-        <div className="flex items-center gap-2.5">
-          {/* Live Output Toggle */}
-          <button
-            onClick={() => setIsLiveOutputOn(!isLiveOutputOn)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-extrabold tracking-wider transition-all border ${
-              isLiveOutputOn
-                ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500 shadow-lg shadow-rose-950/50'
-                : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border-slate-800'
-            }`}
-            title="Toggle Live Program Output to Stage & Main Projectors"
-          >
-            <span className={`w-2.5 h-2.5 rounded-full ${isLiveOutputOn ? 'bg-white animate-ping' : 'bg-slate-600'}`} />
-            <span>{isLiveOutputOn ? 'PROGRAM LIVE' : 'OFFLINE'}</span>
-          </button>
-
-          {/* View Mode Switcher */}
-          <div className="hidden sm:flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
-            <button
-              onClick={() => setActiveViewMode('operator')}
-              className={`px-3 py-1 rounded-lg transition-colors ${
-                activeViewMode === 'operator'
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Operator
-            </button>
-            <button
-              onClick={() => setActiveViewMode('confidence')}
-              className={`px-3 py-1 rounded-lg transition-colors ${
-                activeViewMode === 'confidence'
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Stage View
-            </button>
-          </div>
-
-          {/* Quick Alert Generator */}
-          <button
-            onClick={openAlertModal}
-            className="p-2 text-amber-400 bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:border-amber-500/50 rounded-xl transition-all shadow-sm"
-            title="Send Stage Alert / Nursery Calling / Banner"
-          >
-            <AlertCircle className="w-4.5 h-4.5" />
-          </button>
-
-          {/* Keyboard Shortcuts Help */}
-          <button
-            onClick={() => setShowKeyboardHelp(true)}
-            className="p-2 text-slate-400 bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-xl transition-all"
-            title="View Keyboard Shortcuts"
-          >
-            <Keyboard className="w-4.5 h-4.5" />
-          </button>
-        </div>
       </header>
 
-      {/* Keyboard Shortcuts Modal */}
-      {showKeyboardHelp && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-5 shadow-2xl text-slate-100 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+      {/* Settings & Keyboard Shortcuts Customizer Modal */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-xl max-h-[85vh] flex flex-col overflow-hidden shadow-2xl text-slate-100">
+            {/* Header */}
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
               <div className="flex items-center gap-2">
                 <Keyboard className="w-5 h-5 text-indigo-400" />
-                <h3 className="text-base font-bold text-white">Keyboard Shortcuts</h3>
+                <div>
+                  <h3 className="text-base font-bold text-white">Keyboard Shortcuts & Trigger Settings</h3>
+                  <p className="text-xs text-slate-400">Customize key bindings and slide live activation behavior</p>
+                </div>
               </div>
               <button
-                onClick={() => setShowKeyboardHelp(false)}
+                onClick={() => setShowSettingsModal(false)}
                 className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-2 text-xs">
-              <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-800">
-                <span className="text-slate-300">Advance to Next Slide</span>
-                <kbd className="px-2 py-1 bg-slate-800 text-amber-300 font-bold rounded border border-slate-700">Spacebar / Arrow Right</kbd>
-              </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-800">
-                <span className="text-slate-300">Previous Slide</span>
-                <kbd className="px-2 py-1 bg-slate-800 text-slate-300 font-bold rounded border border-slate-700">Arrow Left / Page Up</kbd>
-              </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-800">
-                <span className="text-slate-300">Toggle Clear Text</span>
-                <kbd className="px-2 py-1 bg-slate-800 text-slate-300 font-bold rounded border border-slate-700">F2</kbd>
-              </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-800">
-                <span className="text-slate-300">Toggle Clear Background</span>
-                <kbd className="px-2 py-1 bg-slate-800 text-slate-300 font-bold rounded border border-slate-700">F3</kbd>
-              </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-800">
-                <span className="text-slate-300">Toggle Black Screen</span>
-                <kbd className="px-2 py-1 bg-slate-800 text-slate-300 font-bold rounded border border-slate-700">F4</kbd>
-              </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-800">
-                <span className="text-slate-300">Toggle Church Logo Screen</span>
-                <kbd className="px-2 py-1 bg-slate-800 text-slate-300 font-bold rounded border border-slate-700">F5</kbd>
-              </div>
+            {/* Tab Switcher */}
+            <div className="flex border-b border-slate-800 bg-slate-950/60 text-xs font-semibold">
+              <button
+                onClick={() => setActiveTab('shortcuts')}
+                className={`px-4 py-2.5 transition-colors border-b-2 flex items-center gap-1.5 ${
+                  activeTab === 'shortcuts'
+                    ? 'border-indigo-500 text-indigo-300 bg-slate-900'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Keyboard className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Custom Keyboard Shortcuts</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('triggers')}
+                className={`px-4 py-2.5 transition-colors border-b-2 flex items-center gap-1.5 ${
+                  activeTab === 'triggers'
+                    ? 'border-indigo-500 text-indigo-300 bg-slate-900'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <MousePointer className="w-3.5 h-3.5 text-amber-400" />
+                <span>Slide Live Trigger Settings</span>
+              </button>
             </div>
 
-            <button
-              onClick={() => setShowKeyboardHelp(false)}
-              className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 font-bold text-xs rounded-xl text-white transition-colors"
-            >
-              Got It
-            </button>
+            {/* Tab Content */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+              {activeTab === 'shortcuts' ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-400">Click on any key box to rebind your shortcut</span>
+                    <button
+                      onClick={handleResetShortcuts}
+                      className="text-[11px] font-bold text-slate-400 hover:text-amber-300 flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Reset Defaults</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    {shortcuts.map((sc) => (
+                      <div
+                        key={sc.id}
+                        className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3"
+                      >
+                        <div>
+                          <p className="font-bold text-white">{sc.label}</p>
+                          <span className="text-[10px] text-slate-500">{sc.category}</span>
+                        </div>
+
+                        {editingShortcutId === sc.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={keyBuffer}
+                              onChange={(e) => setKeyBuffer(e.target.value)}
+                              onKeyDown={(e) => {
+                                e.preventDefault();
+                                if (e.key === 'Escape') {
+                                  setEditingShortcutId(null);
+                                  return;
+                                }
+                                if (e.key === 'Enter' && keyBuffer) {
+                                  handleSaveKeyForShortcut(sc.id, keyBuffer);
+                                  return;
+                                }
+                                const parts: string[] = [];
+                                if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
+                                if (e.shiftKey && e.key !== 'Shift') parts.push('Shift');
+                                if (e.altKey && e.key !== 'Alt') parts.push('Alt');
+
+                                if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+                                  const k = e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key;
+                                  parts.push(k);
+                                }
+
+                                const combo = parts.join('+');
+                                if (combo) {
+                                  setKeyBuffer(combo);
+                                }
+                              }}
+                              placeholder="Press keys (e.g. Shift+M)"
+                              autoFocus
+                              className="w-36 bg-slate-900 border border-indigo-500 rounded px-2 py-1 text-xs text-amber-300 font-mono focus:outline-none"
+                            />
+                            <button
+                              onClick={() => handleSaveKeyForShortcut(sc.id, keyBuffer || sc.key)}
+                              className="px-2 py-1 bg-indigo-600 text-white font-bold text-[10px] rounded"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingShortcutId(null)}
+                              className="p-1 text-slate-400 hover:text-white text-[10px]"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleStartEditShortcut(sc.id)}
+                            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 font-mono font-bold rounded-lg border border-slate-700 text-xs shadow-inner flex items-center gap-1.5 cursor-pointer"
+                            title="Click to edit shortcut key"
+                          >
+                            <span>{sc.key}</span>
+                            <span className="text-[9px] font-normal text-slate-400 underline">Change</span>
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                /* Slide Trigger Settings */
+                <div className="space-y-4 text-xs">
+                  <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <MousePointer className="w-4 h-4 text-amber-400" />
+                      <span>Slide Preview Live Activation Trigger</span>
+                    </h4>
+                    <p className="text-slate-400 text-xs leading-relaxed">
+                      Choose how slide thumbnails in the grid activate and push content to the live presentation output.
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                      {/* Double Click Option */}
+                      <div
+                        onClick={() => handleToggleSlideTrigger('double_click')}
+                        className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                          slideActivationMode === 'double_click'
+                            ? 'bg-indigo-950/60 border-indigo-500 text-white ring-1 ring-indigo-500'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-extrabold text-amber-300">Double-Click (Default)</span>
+                          {slideActivationMode === 'double_click' && (
+                            <Check className="w-4 h-4 text-indigo-400" />
+                          )}
+                        </div>
+                        <p className="text-[11px] leading-snug text-slate-300">
+                          Single-click previews & selects slide safely. Double-click pushes slide LIVE to stage screen.
+                        </p>
+                      </div>
+
+                      {/* Single Click Option */}
+                      <div
+                        onClick={() => handleToggleSlideTrigger('single_click')}
+                        className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                          slideActivationMode === 'single_click'
+                            ? 'bg-indigo-950/60 border-indigo-500 text-white ring-1 ring-indigo-500'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-extrabold text-amber-300">Single-Click</span>
+                          {slideActivationMode === 'single_click' && (
+                            <Check className="w-4 h-4 text-indigo-400" />
+                          )}
+                        </div>
+                        <p className="text-[11px] leading-snug text-slate-300">
+                          Single-click immediately pushes selected slide LIVE to the screen with zero extra clicks.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 bg-slate-950 border-t border-slate-800 flex justify-end">
+              <button
+                onClick={() => setShowSettingsModal(false)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 font-bold text-xs rounded-xl text-white transition-colors"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
     </>
   );
 };
-

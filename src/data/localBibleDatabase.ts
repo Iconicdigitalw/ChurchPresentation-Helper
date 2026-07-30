@@ -338,6 +338,44 @@ function getSyntheticVerseText(book: string, chapter: number, verse: number, tra
   return templates[index];
 }
 
+// Custom Uploaded Bible Versions registry stored in LocalStorage
+export interface CustomBibleVersion {
+  id: string; // e.g. "NASB", "CSB", "MY_CUSTOM_VER"
+  name: string; // e.g. "New American Standard Bible"
+  isCustom?: boolean;
+  verses: Record<string, string>; // e.g. { "John 3:16": "For God so loved...", "John:3:16": "..." }
+}
+
+const CUSTOM_BIBLE_KEY = 'LOGOS_CUSTOM_BIBLE_VERSIONS';
+
+export function getCustomBibleVersions(): CustomBibleVersion[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_BIBLE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export function saveCustomBibleVersion(version: CustomBibleVersion) {
+  try {
+    const existing = getCustomBibleVersions().filter(v => v.id.toUpperCase() !== version.id.toUpperCase());
+    existing.push({ ...version, id: version.id.toUpperCase(), isCustom: true });
+    localStorage.setItem(CUSTOM_BIBLE_KEY, JSON.stringify(existing));
+  } catch (e) {
+    console.error("Error saving custom bible version:", e);
+  }
+}
+
+export function removeCustomBibleVersion(versionId: string) {
+  try {
+    const existing = getCustomBibleVersions().filter(v => v.id.toUpperCase() !== versionId.toUpperCase());
+    localStorage.setItem(CUSTOM_BIBLE_KEY, JSON.stringify(existing));
+  } catch (e) {
+    console.error("Error removing custom bible version:", e);
+  }
+}
+
 /**
  * Instant local Bible search parser & generator.
  * Returns synchronous Bible chapter and contiguous verse results with translation support.
@@ -399,6 +437,10 @@ export function searchLocalBible(query: string, version: string = 'NIV'): LocalB
     }
   }
 
+  // Check custom uploaded versions from localStorage first
+  const customVersions = getCustomBibleVersions();
+  const matchedCustom = customVersions.find(cv => cv.id.toUpperCase() === vKey);
+
   const datasetKey = `${matchedBook}:${matchedChapter}`;
   const chapterStore = SCRIPTURE_DATASET[datasetKey];
 
@@ -409,9 +451,30 @@ export function searchLocalBible(query: string, version: string = 'NIV'): LocalB
 
   for (let vNum = 1; vNum <= maxVerseCount; vNum++) {
     let verseText = "";
-    if (chapterStore && chapterStore[vNum]) {
+
+    // 1. Try custom version lookup if available
+    if (matchedCustom) {
+      const keysToTry = [
+        `${matchedBook} ${matchedChapter}:${vNum}`,
+        `${matchedBook}:${matchedChapter}:${vNum}`,
+        `${matchedBook} ${matchedChapter} ${vNum}`,
+        `${matchedBook.toLowerCase()} ${matchedChapter}:${vNum}`
+      ];
+      for (const k of keysToTry) {
+        if (matchedCustom.verses[k]) {
+          verseText = matchedCustom.verses[k];
+          break;
+        }
+      }
+    }
+
+    // 2. Try hardcoded scripture dataset
+    if (!verseText && chapterStore && chapterStore[vNum]) {
       verseText = chapterStore[vNum][vKey] || chapterStore[vNum]['NIV'] || Object.values(chapterStore[vNum])[0];
-    } else {
+    }
+
+    // 3. Fallback to coherent translation text generator
+    if (!verseText) {
       verseText = getSyntheticVerseText(matchedBook, matchedChapter, vNum, vKey);
     }
 

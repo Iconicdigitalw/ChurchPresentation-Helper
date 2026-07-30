@@ -79,7 +79,7 @@ export type QuickState = 'normal' | 'clearText' | 'clearBg' | 'black' | 'logo';
 
 export type ViewMode = 'operator' | 'confidence' | 'stageDisplay';
 
-export type SearchMode = 'bible' | 'songs' | 'visuals';
+export type SearchMode = 'bible' | 'songs' | 'visuals' | 'deck';
 
 export interface AlertOverlay {
   show: boolean;
