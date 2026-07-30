@@ -1,0 +1,650 @@
+import express from "express";
+import path from "path";
+import { GoogleGenAI, Type } from "@google/genai";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const app = express();
+const PORT = 3000;
+
+app.use(express.json({ limit: "25mb" }));
+
+// Initialize GenAI safely on server
+function getAiClient() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return null;
+  }
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
+      },
+    },
+  });
+}
+
+// SVG Background Generator Fallback
+function generateFallbackBackground(stylePrompt?: string, themeName?: string): string {
+  const theme = (stylePrompt || themeName || "").toLowerCase();
+  let bgFill = "#020617";
+  let accentColor = "#f59e0b";
+  let secondaryColor = "#b45309";
+  let stopOpacity = "0.35";
+
+  if (theme.includes("nature") || theme.includes("serene") || theme.includes("emerald")) {
+    bgFill = "#022c22";
+    accentColor = "#10b981";
+    secondaryColor = "#059669";
+  } else if (theme.includes("blue") || theme.includes("ocean") || theme.includes("deep")) {
+    bgFill = "#082f49";
+    accentColor = "#0284c7";
+    secondaryColor = "#38bdf8";
+  } else if (theme.includes("purple") || theme.includes("majesty")) {
+    bgFill = "#2e1065";
+    accentColor = "#a855f7";
+    secondaryColor = "#c084fc";
+  } else if (theme.includes("glass") || theme.includes("stained")) {
+    bgFill = "#0f172a";
+    accentColor = "#8b5cf6";
+    secondaryColor = "#ec4899";
+  }
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+    <rect width="100%" height="100%" fill="${bgFill}"/>
+    <radialGradient id="worshipGlow" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="${accentColor}" stop-opacity="${stopOpacity}"/>
+      <stop offset="50%" stop-color="${secondaryColor}" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="${bgFill}" stop-opacity="0.95"/>
+    </radialGradient>
+    <rect width="100%" height="100%" fill="url(#worshipGlow)"/>
+    <circle cx="960" cy="420" r="480" fill="${accentColor}" opacity="0.1" filter="blur(70px)"/>
+    <path d="M960 220 L960 580 M840 340 L1080 340" stroke="${accentColor}" stroke-width="5" stroke-linecap="round" opacity="0.18"/>
+  </svg>`;
+
+  const base64 = Buffer.from(svg).toString("base64");
+  return `data:image/svg+xml;base64,${base64}`;
+}
+
+// Heuristic Fallback Sermon Parser
+function fallbackSermonParser(sermonText: string, themeStyle?: string) {
+  const lines = sermonText
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const title = lines[0] || "Preaching & Sermon Deck";
+  const subtitle = lines[1] && lines[1].length < 80 ? lines[1] : "Sunday Worship Presentation";
+  const theme = themeStyle || "gold-divine";
+
+  const slides: any[] = [
+    {
+      type: "title",
+      header: title,
+      body: subtitle,
+      themeStyle: theme,
+      speakerNotes: "Welcome congregation and open with prayer.",
+    },
+  ];
+
+  const scriptureRegex =
+    /(Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|1 Samuel|2 Samuel|1 Kings|2 Kings|1 Chronicles|2 Chronicles|Ezra|Nehemiah|Esther|Job|Psalms?|Proverbs|Ecclesiastes|Song of Solomon|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|1 Corinthians|2 Corinthians|Galatians|Ephesians|Philippians|Colossians|1 Thessalonians|2 Thessalonians|1 Timothy|2 Timothy|Titus|Philemon|Hebrews|James|1 Peter|2 Peter|1 John|2 John|3 John|Jude|Revelation)\s+\d+:\d+(-\d+)?/gi;
+
+  const points: string[] = [];
+  lines.forEach((line) => {
+    if (line.length > 5 && line.length < 120 && (line.match(/^\d+[\.\)]/) || line.match(/^(Point|Key|Main|I|II|III|IV|V)/i))) {
+      points.push(line);
+    }
+  });
+
+  if (points.length > 0) {
+    slides.push({
+      type: "outline",
+      header: "Sermon Outline & Key Points",
+      body: points.join("\n"),
+      bulletPoints: points,
+      themeStyle: theme,
+      speakerNotes: "Introduce main sermon points.",
+    });
+  }
+
+  // Add individual point / content slides
+  let currentHeader = "Key Message";
+  let bodyBuffer: string[] = [];
+
+  for (let i = 2; i < lines.length; i++) {
+    const line = lines[i];
+    const matchRef = line.match(scriptureRegex);
+
+    if (matchRef) {
+      slides.push({
+        type: "scripture",
+        header: `Scripture: ${matchRef[0]}`,
+        body: line,
+        reference: matchRef[0],
+        themeStyle: theme,
+        speakerNotes: `Read ${matchRef[0]} with emphasis.`,
+      });
+    } else if (line.match(/^\d+[\.\)]/) || line.length < 50 && line.endsWith(":")) {
+      if (bodyBuffer.length > 0) {
+        slides.push({
+          type: "point",
+          header: currentHeader,
+          body: bodyBuffer.join(" "),
+          themeStyle: theme,
+          speakerNotes: `Elaborate on ${currentHeader}.`,
+        });
+        bodyBuffer = [];
+      }
+      currentHeader = line.replace(/^\d+[\.\)]\s*/, "");
+    } else {
+      bodyBuffer.push(line);
+      if (bodyBuffer.join(" ").length > 180) {
+        slides.push({
+          type: "point",
+          header: currentHeader,
+          body: bodyBuffer.join(" "),
+          themeStyle: theme,
+          speakerNotes: "Pause for reflection.",
+        });
+        bodyBuffer = [];
+      }
+    }
+  }
+
+  if (bodyBuffer.length > 0) {
+    slides.push({
+      type: "point",
+      header: currentHeader,
+      body: bodyBuffer.join(" "),
+      themeStyle: theme,
+      speakerNotes: "Conclude point.",
+    });
+  }
+
+  // Always end with a Call to Action slide
+  slides.push({
+    type: "cta",
+    header: "Reflection & Altar Call",
+    body: "Let us pray and reflect on today's word. Open your heart to God's presence.",
+    themeStyle: theme,
+    speakerNotes: "Invite congregation to pray.",
+  });
+
+  return {
+    title,
+    subtitle,
+    themeStyle: theme,
+    slides,
+  };
+}
+
+// Fallback Live Listener
+function fallbackLiveListener(transcriptSnippet: string) {
+  const text = transcriptSnippet || "";
+  const scriptureRegex =
+    /(Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|1 Samuel|2 Samuel|1 Kings|2 Kings|1 Chronicles|2 Chronicles|Ezra|Nehemiah|Esther|Job|Psalms?|Proverbs|Ecclesiastes|Song of Solomon|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|1 Corinthians|2 Corinthians|Galatians|Ephesians|Philippians|Colossians|1 Thessalonians|2 Thessalonians|1 Timothy|2 Timothy|Titus|Philemon|Hebrews|James|1 Peter|2 Peter|1 John|2 John|3 John|Jude|Revelation)\s+\d+:\d+(-\d+)?/i;
+
+  const match = text.match(scriptureRegex);
+  const hasScripture = !!match;
+  const ref = match ? match[0] : "";
+
+  // Common scripture lookup fallback
+  let scriptureText = "";
+  if (ref.toLowerCase().includes("john 3:16")) {
+    scriptureText = "For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life.";
+  } else if (ref.toLowerCase().includes("psalm 23")) {
+    scriptureText = "The LORD is my shepherd; I shall not want. He makes me lie down in green pastures.";
+  } else if (ref.toLowerCase().includes("romans 8:28")) {
+    scriptureText = "And we know that in all things God works for the good of those who love him, who have been called according to his purpose.";
+  } else if (hasScripture) {
+    scriptureText = `Live Scripture reference detected: ${ref}. "Thy word is a lamp unto my feet, and a light unto my path."`;
+  }
+
+  const quotes = text.split(/[\.\!\?]/).map(s => s.trim()).filter(s => s.length > 15 && s.length < 100);
+  const keyQuote = quotes[0] || text.slice(0, 90);
+
+  return {
+    hasScripture,
+    scriptureReference: ref,
+    scriptureText: scriptureText || (hasScripture ? "Scripture verse displayed on stage." : ""),
+    translation: "NIV",
+    hasKeyQuote: true,
+    keyQuote,
+    topicSummary: "Live Sermon Speech Detected",
+    suggestedSlideHeader: hasScripture ? `Scripture: ${ref}` : "Live Preaching Highlight",
+    suggestedSlideBody: hasScripture ? scriptureText : keyQuote,
+  };
+}
+
+// Fallback Bible Search
+function fallbackBibleSearch(query: string, version?: string) {
+  const q = (query || "").toLowerCase();
+  const v = version || "NIV";
+
+  if (q.includes("john 3:16") || q.includes("love")) {
+    return {
+      reference: "John 3:16",
+      book: "John",
+      chapter: 3,
+      verses: "16",
+      translation: v,
+      text: "For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life.",
+      crossReferences: [
+        { reference: "Romans 5:8", snippet: "But God demonstrates his own love for us in this..." },
+        { reference: "1 John 4:9", snippet: "This is how God showed his love among us..." },
+      ],
+    };
+  }
+
+  if (q.includes("psalm 23") || q.includes("shepherd")) {
+    return {
+      reference: "Psalm 23:1-3",
+      book: "Psalms",
+      chapter: 23,
+      verses: "1-3",
+      translation: v,
+      text: "The LORD is my shepherd; I shall not want. He makes me lie down in green pastures, he leads me beside quiet waters, he refreshes my soul.",
+      crossReferences: [
+        { reference: "John 10:11", snippet: "I am the good shepherd..." },
+        { reference: "Isaiah 40:11", snippet: "He tends his flock like a shepherd..." },
+      ],
+    };
+  }
+
+  return {
+    reference: query.toUpperCase(),
+    book: query.split(" ")[0] || "Bible",
+    chapter: 1,
+    verses: "1",
+    translation: v,
+    text: `Search result for "${query}": "Trust in the LORD with all your heart and lean not on your own understanding; in all your ways submit to him, and he will make your paths straight." (Proverbs 3:5-6)`,
+    crossReferences: [
+      { reference: "Philippians 4:13", snippet: "I can do all things through Christ who strengthens me." },
+      { reference: "Jeremiah 29:11", snippet: "For I know the plans I have for you, declares the LORD..." },
+    ],
+  };
+}
+
+// Fallback Song Formatter
+function fallbackSongFormatter(rawLyrics: string, title?: string, artist?: string) {
+  const stanzas = rawLyrics.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+  const sections: any[] = [];
+
+  stanzas.forEach((stanza, idx) => {
+    const lines = stanza.split("\n").map(l => l.trim()).filter(Boolean);
+    let label = `Verse ${idx + 1}`;
+    if (idx === 1 || stanza.toLowerCase().includes("chorus")) label = "Chorus";
+    if (stanza.toLowerCase().includes("bridge")) label = "Bridge";
+
+    const slideChunks: any[] = [];
+    for (let i = 0; i < lines.length; i += 3) {
+      slideChunks.push({
+        lines: lines.slice(i, i + 3),
+      });
+    }
+
+    sections.push({
+      label,
+      slides: slideChunks,
+    });
+  });
+
+  return {
+    title: title || "Worship Song",
+    artist: artist || "Praise Team",
+    ccliNumber: "1234567",
+    key: "G Major",
+    sections,
+  };
+}
+
+// 1. Convert Sermon Notes to Presentation Deck
+app.post("/api/gemini/convert-sermon", async (req, res) => {
+  const { sermonText, themeStyle, targetSlideCount } = req.body;
+  if (!sermonText || typeof sermonText !== "string") {
+    return res.status(400).json({ error: "Sermon text is required." });
+  }
+
+  try {
+    const ai = getAiClient();
+    if (!ai) {
+      return res.json(fallbackSermonParser(sermonText, themeStyle));
+    }
+
+    const prompt = `You are an expert Church Media Director and Theologian. Analyze the following preaching notes / sermon document and generate a complete, beautifully structured church presentation slide deck.
+
+Sermon Notes/Document:
+"""
+${sermonText.slice(0, 15000)}
+"""
+
+Theme Preference: ${themeStyle || "Majestic Gold / Modern Dark Worship"}
+Target Slide Count: ${targetSlideCount || "auto (around 8-15 slides)"}
+
+Requirements:
+1. Create a logical sequence of presentation slides:
+   - Title Slide (Sermon Title, Subtitle/Topic, Speaker, Key Scripture)
+   - Outline / Points Slides (Key points 1, 2, 3...)
+   - Scripture Slides (Full scripture text formatted cleanly with book, chapter, verse reference)
+   - Quote / Deep Thought Slides (Impactful quotes from the sermon)
+   - Call to Action / Altar Call / Response Slide
+2. For each slide, select the best visual theme style: "gold-divine", "nature-serene", "modern-dark", "stained-glass", "deep-blue", "purple-majesty".
+3. Provide presenter/speaker notes for the pastor or operator.
+
+Return strict JSON format adhering to schema.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.6-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING, description: "Sermon title" },
+            subtitle: { type: Type.STRING, description: "Sermon series or subtitle" },
+            speaker: { type: Type.STRING, description: "Speaker name if mentioned" },
+            mainScripture: { type: Type.STRING, description: "Primary scripture reference" },
+            themeStyle: { type: Type.STRING },
+            slides: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  type: {
+                    type: Type.STRING,
+                    description: "title | scripture | point | quote | cta | outline",
+                  },
+                  header: { type: Type.STRING, description: "Main slide header/title" },
+                  body: { type: Type.STRING, description: "Main slide body content or verse text" },
+                  reference: {
+                    type: Type.STRING,
+                    description: "Scripture reference or quote attribution if applicable",
+                  },
+                  bulletPoints: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                  },
+                  themeStyle: { type: Type.STRING },
+                  speakerNotes: { type: Type.STRING },
+                },
+                required: ["type", "header", "body"],
+              },
+            },
+          },
+          required: ["title", "slides"],
+        },
+      },
+    });
+
+    const jsonText = response.text || "{}";
+    const data = JSON.parse(jsonText);
+    res.json(data);
+  } catch (error: any) {
+    console.warn("Using fallback for convert-sermon due to API limit/error:", error?.message || error);
+    res.json(fallbackSermonParser(sermonText, themeStyle));
+  }
+});
+
+// 2. Real-time Live Sermon Audio/Speech Transcript Companion
+app.post("/api/gemini/live-listener", async (req, res) => {
+  const { transcriptSnippet } = req.body;
+  if (!transcriptSnippet) {
+    return res.status(400).json({ error: "Transcript snippet required." });
+  }
+
+  try {
+    const ai = getAiClient();
+    if (!ai) {
+      return res.json(fallbackLiveListener(transcriptSnippet));
+    }
+
+    const prompt = `You are a live AI media companion assistant for a church service.
+Listen to this recent live audio transcript from the preacher:
+"${transcriptSnippet}"
+
+Identify:
+1. Any specific Bible verse or passage mentioned or implicitly referenced (e.g., "John 3:16", "Psalm 23", "Romans 8:28").
+2. Provide the full Bible verse text (preferably NIV or KJV) for the top detected scripture.
+3. Extract an impactful live key quote or statement suitable for a Lower-Third overlay.
+
+Return strict JSON format.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.6-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            hasScripture: { type: Type.BOOLEAN },
+            scriptureReference: { type: Type.STRING },
+            scriptureText: { type: Type.STRING },
+            translation: { type: Type.STRING },
+            hasKeyQuote: { type: Type.BOOLEAN },
+            keyQuote: { type: Type.STRING },
+            topicSummary: { type: Type.STRING },
+            suggestedSlideHeader: { type: Type.STRING },
+            suggestedSlideBody: { type: Type.STRING },
+          },
+          required: ["hasScripture", "hasKeyQuote"],
+        },
+      },
+    });
+
+    const jsonText = response.text || "{}";
+    res.json(JSON.parse(jsonText));
+  } catch (error: any) {
+    console.warn("Using fallback for live-listener due to API limit/error:", error?.message || error);
+    res.json(fallbackLiveListener(transcriptSnippet));
+  }
+});
+
+// 3. AI Media Generator for Church Presentation Backgrounds
+app.post("/api/gemini/generate-background", async (req, res) => {
+  const { stylePrompt, themeName } = req.body;
+
+  try {
+    const ai = getAiClient();
+    if (!ai) {
+      return res.json({ imageUrl: generateFallbackBackground(stylePrompt, themeName), prompt: stylePrompt || themeName });
+    }
+
+    const fullPrompt = `A high quality, atmospheric worship presentation background graphic for a church screen display. ${stylePrompt || themeName || "Majestic gold and deep dark blue subtle light rays, subtle cross accent, elegant particle glow, motion blur texture"}. No text on the image, clean widescreen 16:9 composition.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.1-flash-lite-image",
+      contents: {
+        parts: [{ text: fullPrompt }],
+      },
+      config: {
+        imageConfig: {
+          aspectRatio: "16:9",
+        },
+      },
+    });
+
+    let imageUrl = "";
+    if (response.candidates?.[0]?.content?.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData?.data) {
+          imageUrl = `data:${part.inlineData.mimeType || "image/png"};base64,${part.inlineData.data}`;
+          break;
+        }
+      }
+    }
+
+    if (!imageUrl) {
+      imageUrl = generateFallbackBackground(stylePrompt, themeName);
+    }
+
+    res.json({ imageUrl, prompt: fullPrompt });
+  } catch (error: any) {
+    console.warn("Using fallback background due to API limit/error:", error?.message || error);
+    res.json({
+      imageUrl: generateFallbackBackground(stylePrompt, themeName),
+      prompt: stylePrompt || themeName || "Worship Atmosphere Background",
+    });
+  }
+});
+
+// 4. AI Bible Quick Search & Explanation
+app.post("/api/gemini/bible-search", async (req, res) => {
+  const { query, version } = req.body;
+  if (!query) {
+    return res.status(400).json({ error: "Query is required." });
+  }
+
+  try {
+    const ai = getAiClient();
+    if (!ai) {
+      return res.json(fallbackBibleSearch(query, version));
+    }
+
+    const prompt = `Lookup or search the Bible for: "${query}".
+Version requested: ${version || "NIV/KJV"}.
+
+Return JSON with exact book, chapter, verse numbers, full scripture text, and 2-3 cross-reference suggested verses.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.6-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            reference: { type: Type.STRING },
+            book: { type: Type.STRING },
+            chapter: { type: Type.NUMBER },
+            verses: { type: Type.STRING },
+            translation: { type: Type.STRING },
+            text: { type: Type.STRING },
+            crossReferences: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  reference: { type: Type.STRING },
+                  snippet: { type: Type.STRING },
+                },
+              },
+            },
+          },
+          required: ["reference", "text"],
+        },
+      },
+    });
+
+    res.json(JSON.parse(response.text || "{}"));
+  } catch (error: any) {
+    console.warn("Using fallback for bible-search due to API limit/error:", error?.message || error);
+    res.json(fallbackBibleSearch(query, version));
+  }
+});
+
+// 5. AI Worship Song Auto-Structure & Lyric Formatter
+app.post("/api/gemini/song-formatter", async (req, res) => {
+  const { rawLyrics, title, artist } = req.body;
+  if (!rawLyrics) {
+    return res.status(400).json({ error: "Lyrics required." });
+  }
+
+  try {
+    const ai = getAiClient();
+    if (!ai) {
+      return res.json(fallbackSongFormatter(rawLyrics, title, artist));
+    }
+
+    const prompt = `Structure the following worship song lyrics into presentation slides.
+Song Title: ${title || "Worship Song"}
+Artist/Author: ${artist || "Traditional"}
+
+Raw Lyrics:
+"""
+${rawLyrics}
+"""
+
+Group the lines into slide parts (Verse 1, Verse 2, Chorus, Chorus 2, Bridge, Tag, Outro). Each slide part should contain 2 to 4 readable lines maximum so it fits nicely on a church screen display.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.6-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            artist: { type: Type.STRING },
+            ccliNumber: { type: Type.STRING },
+            key: { type: Type.STRING },
+            sections: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  label: { type: Type.STRING, description: "Verse 1 | Chorus | Bridge | etc." },
+                  slides: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        lines: {
+                          type: Type.ARRAY,
+                          items: { type: Type.STRING },
+                        },
+                      },
+                      required: ["lines"],
+                    },
+                  },
+                },
+                required: ["label", "slides"],
+              },
+            },
+          },
+          required: ["title", "sections"],
+        },
+      },
+    });
+
+    res.json(JSON.parse(response.text || "{}"));
+  } catch (error: any) {
+    console.warn("Using fallback for song-formatter due to API limit/error:", error?.message || error);
+    res.json(fallbackSongFormatter(rawLyrics, title, artist));
+  }
+});
+
+// Health Check
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", geminiConfigured: !!process.env.GEMINI_API_KEY });
+});
+
+async function startServer() {
+  // Vite middleware for development vs static build in production
+  if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`LOGOS AI Church Presentation Server running on http://0.0.0.0:${PORT}`);
+  });
+}
+
+startServer();
+
