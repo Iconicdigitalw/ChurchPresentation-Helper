@@ -112,7 +112,8 @@ export const SchedulePanel: React.FC<SchedulePanelProps> = ({
   );
 
   return (
-    <aside 
+    <aside
+      data-key-scope="schedule"
       style={customWidth ? { width: `${customWidth}px` } : undefined}
       className={`w-full ${customWidth ? '' : 'lg:w-72'} bg-slate-900 border-r border-slate-800 flex flex-col h-full shrink-0 select-none text-slate-100 relative z-10`}
     >

@@ -46,6 +46,7 @@ import {
   scheduleReducer
 } from './state/scheduleReducer';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
+import { useActiveKeyScope } from './hooks/useActiveKeyScope';
 import { broadcastLiveSlideState } from './utils/liveDisplayManager';
 
 /** How long to wait after the last edit before writing the schedule to storage. */
@@ -229,9 +230,14 @@ export default function App() {
     [openQuickSearchWithMode]
   );
 
+  // Arrow keys mean different things depending on which panel the operator is
+  // working in, so the console tracks the active region.
+  const activeKeyScope = useActiveKeyScope();
+
   useGlobalShortcuts({
     shortcuts,
     enabled: !isAnyModalOpen,
+    activeScope: activeKeyScope,
     handlers: shortcutHandlers
   });
 

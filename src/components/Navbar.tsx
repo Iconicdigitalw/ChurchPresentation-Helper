@@ -33,7 +33,8 @@ import {
   CheckCircle,
   ShieldAlert,
   Sun,
-  Moon
+  Moon,
+  Palette
 } from 'lucide-react';
 import { QuickState, ViewMode, SearchMode } from '../types';
 import { 
@@ -47,9 +48,13 @@ import {
   saveUserProfileSettings,
   UserProfileSettings,
   UiTheme,
+  UiThemePreset,
+  UI_THEME_PRESETS,
   getUiTheme,
   saveUiTheme,
-  applyUiTheme
+  getUiThemePreset,
+  saveUiThemePreset,
+  applyTheme
 } from '../data/settingsAndTemplates';
 import { openLiveProjectorWindow } from '../utils/liveDisplayManager';
 
@@ -113,18 +118,52 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [userProfile, setUserProfile] = useState<UserProfileSettings>(getUserProfileSettings());
 
   const [uiTheme, setUiTheme] = useState<UiTheme>(() => getUiTheme());
+  const [uiThemePreset, setUiThemePreset] = useState<UiThemePreset>(() => getUiThemePreset());
+  const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
 
-  const toggleUiTheme = () => {
-    const next: UiTheme = uiTheme === 'light' ? 'dark' : 'light';
-    // Briefly enable colour transitions so the swap eases rather than snaps.
+  // Briefly enable colour transitions so a theme swap eases rather than snaps.
+  const easeThemeChange = () => {
     const root = document.documentElement;
     root.classList.add('theme-transition');
-    window.setTimeout(() => root.classList.remove('theme-transition'), 220);
+    window.setTimeout(() => root.classList.remove('theme-transition'), 240);
+  };
 
-    applyUiTheme(next);
+  const applyMode = (next: UiTheme) => {
+    easeThemeChange();
+    applyTheme(uiThemePreset, next);
     saveUiTheme(next);
     setUiTheme(next);
   };
+
+  const applyPreset = (next: UiThemePreset) => {
+    // Each theme is designed around a mode, so adopt it on first switch.
+    const preferred = UI_THEME_PRESETS.find(p => p.id === next)?.preferredMode ?? uiTheme;
+    easeThemeChange();
+    applyTheme(next, preferred);
+    saveUiThemePreset(next);
+    saveUiTheme(preferred);
+    setUiThemePreset(next);
+    setUiTheme(preferred);
+  };
+
+  const toggleUiTheme = () => applyMode(uiTheme === 'light' ? 'dark' : 'light');
+
+  // Close the theme menu on outside click / Escape.
+  useEffect(() => {
+    if (!isThemeMenuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement)?.closest('.theme-menu-root')) setIsThemeMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsThemeMenuOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isThemeMenuOpen]);
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
@@ -308,7 +347,94 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right Toolbar Controls: Theme, Keyboard Shortcuts, Info Alert, AI Live Listener on Extreme Right */}
         <div className="flex items-center gap-2.5 shrink-0">
-          {/* Light / Dark UI Theme */}
+          {/* Console theme picker */}
+          <div className="relative theme-menu-root">
+            <button
+              onClick={() => setIsThemeMenuOpen(open => !open)}
+              className="p-2 text-slate-400 bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:text-slate-100 rounded-xl transition-all"
+              title="Console theme & appearance"
+              aria-label="Console theme and appearance"
+              aria-haspopup="true"
+              aria-expanded={isThemeMenuOpen}
+            >
+              <Palette className="w-4.5 h-4.5 text-indigo-400" />
+            </button>
+
+            {isThemeMenuOpen && (
+              <div
+                className="absolute right-0 top-full mt-2 w-72 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-50 overflow-hidden"
+                role="menu"
+              >
+                <div className="px-4 pt-3.5 pb-2">
+                  <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+                    Console Theme
+                  </h4>
+                </div>
+
+                <div className="px-2.5 pb-2 space-y-1.5">
+                  {UI_THEME_PRESETS.map(preset => {
+                    const isActive = preset.id === uiThemePreset;
+                    return (
+                      <button
+                        key={preset.id}
+                        onClick={() => applyPreset(preset.id)}
+                        role="menuitemradio"
+                        aria-checked={isActive}
+                        className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all ${
+                          isActive
+                            ? 'bg-indigo-500/15 border-indigo-500/50'
+                            : 'bg-slate-950 border-slate-800 hover:bg-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            className={`text-xs font-bold ${
+                              isActive ? 'text-indigo-300' : 'text-slate-200'
+                            }`}
+                          >
+                            {preset.name}
+                          </span>
+                          {isActive && <Check className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                          {preset.description}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="px-4 pt-2.5 pb-2 border-t border-slate-800">
+                  <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+                    Appearance
+                  </h4>
+                </div>
+
+                <div className="px-2.5 pb-3.5">
+                  <div className="flex items-center gap-1 p-1 bg-slate-950 border border-slate-800 rounded-xl">
+                    {(['dark', 'light'] as UiTheme[]).map(mode => (
+                      <button
+                        key={mode}
+                        onClick={() => applyMode(mode)}
+                        role="menuitemradio"
+                        aria-checked={uiTheme === mode}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                          uiTheme === mode
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
+                        }`}
+                      >
+                        {mode === 'dark' ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
+                        <span>{mode === 'dark' ? 'Dark' : 'Light'}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Quick light/dark flip without opening the menu */}
           <button
             onClick={toggleUiTheme}
             className="p-2 text-slate-400 bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:text-slate-100 rounded-xl transition-all"

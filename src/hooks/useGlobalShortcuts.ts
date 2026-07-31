@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { QuickState } from '../types';
 import { ShortcutBinding } from '../data/settingsAndTemplates';
+import { KeyScope } from './useActiveKeyScope';
 
 export interface GlobalShortcutHandlers {
   onNextSlide: () => void;
@@ -22,6 +23,8 @@ interface UseGlobalShortcutsOptions {
   shortcuts: ShortcutBinding[];
   /** False while a modal is open or the operator is typing. */
   enabled: boolean;
+  /** The console region the operator is working in; scopes arrow-key meaning. */
+  activeScope: KeyScope;
   handlers: GlobalShortcutHandlers;
 }
 
@@ -36,7 +39,6 @@ function isTypingTarget(event: KeyboardEvent): boolean {
     if (!el) continue;
     if (TEXT_ENTRY_TAGS.includes(el.tagName)) return true;
     if (el.isContentEditable) return true;
-    if (el.closest('.context-workspace-panel')) return true;
   }
   return false;
 }
@@ -67,12 +69,21 @@ function matchesBinding(event: KeyboardEvent, binding?: ShortcutBinding): boolea
  * Console-wide keyboard control. Extracted from App.tsx, where it had grown into
  * a ~180 line effect that re-subscribed on nearly every render.
  */
-export function useGlobalShortcuts({ shortcuts, enabled, handlers }: UseGlobalShortcutsOptions) {
+export function useGlobalShortcuts({
+  shortcuts,
+  enabled,
+  activeScope,
+  handlers
+}: UseGlobalShortcutsOptions) {
   useEffect(() => {
     if (!enabled) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event)) return;
+
+      // The context workspace runs its own verse/stanza navigation. While the
+      // operator is working in there, arrows must not also drive the schedule.
+      const contextOwnsArrows = activeScope === 'context';
 
       const binding = (id: string) => shortcuts.find(s => s.id === id);
       const matches = (id: string) => matchesBinding(event, binding(id));
@@ -92,6 +103,13 @@ export function useGlobalShortcuts({ shortcuts, enabled, handlers }: UseGlobalSh
       if (matches('trigger_voice_search')) return run(handlers.onOpenLiveCompanion);
       if (event.key === 'Enter' || matches('push_live')) return run(handlers.onPushLive);
 
+      const isArrow =
+        event.key === 'ArrowRight' ||
+        event.key === 'ArrowLeft' ||
+        event.key === 'ArrowUp' ||
+        event.key === 'ArrowDown';
+      if (isArrow && contextOwnsArrows) return;
+
       if (event.key === 'ArrowRight' || event.code === 'Space' || event.key === 'PageDown' || matches('next_slide')) {
         return run(handlers.onNextSlide);
       }
@@ -99,13 +117,15 @@ export function useGlobalShortcuts({ shortcuts, enabled, handlers }: UseGlobalSh
         return run(handlers.onPrevSlide);
       }
 
-      // Vertical arrows step slides; with a modifier they jump schedule items.
+      // In the schedule rail, vertical arrows walk the running order. Anywhere
+      // else they step slides, and a modifier jumps to the next schedule item.
+      const scheduleOwnsArrows = activeScope === 'schedule';
       if (event.key === 'ArrowDown') {
-        const jumpItem = event.shiftKey || event.ctrlKey || event.metaKey;
+        const jumpItem = scheduleOwnsArrows || event.shiftKey || event.ctrlKey || event.metaKey;
         return run(jumpItem ? handlers.onNextItem : handlers.onNextSlide);
       }
       if (event.key === 'ArrowUp') {
-        const jumpItem = event.shiftKey || event.ctrlKey || event.metaKey;
+        const jumpItem = scheduleOwnsArrows || event.shiftKey || event.ctrlKey || event.metaKey;
         return run(jumpItem ? handlers.onPrevItem : handlers.onPrevSlide);
       }
 
@@ -134,5 +154,5 @@ export function useGlobalShortcuts({ shortcuts, enabled, handlers }: UseGlobalSh
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [shortcuts, enabled, handlers]);
+  }, [shortcuts, enabled, activeScope, handlers]);
 }

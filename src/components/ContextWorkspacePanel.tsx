@@ -31,6 +31,7 @@ import {
 } from '../data/localBibleDatabase';
 import { PRESET_SONGS } from '../data/mockData';
 import { getSavedCustomSongs } from '../data/settingsAndTemplates';
+import { getActiveKeyScope } from '../hooks/useActiveKeyScope';
 
 interface ContextWorkspacePanelProps {
   currentItem: ScheduleItem | null;
@@ -160,8 +161,10 @@ export const ContextWorkspacePanel: React.FC<ContextWorkspacePanelProps> = ({
         return;
       }
 
-      const isInsidePanel = targetEl?.closest('.context-workspace-panel') !== null || activeEl?.closest('.context-workspace-panel') !== null;
-      if (!isInsidePanel) return;
+      // Most of this panel is non-focusable divs, so `activeElement` stays on
+      // <body> after a click and cannot tell us the operator is working here.
+      // The shared key scope remembers the last region actually interacted with.
+      if (getActiveKeyScope() !== 'context') return;
 
       if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault();
@@ -440,6 +443,7 @@ export const ContextWorkspacePanel: React.FC<ContextWorkspacePanelProps> = ({
   return (
     <div 
       style={{ height: `${isExpanded ? 480 : dockHeight}px` }}
+      data-key-scope="context"
       className="context-workspace-panel bg-slate-900 border-t border-slate-800 flex flex-col transition-all duration-150 relative z-30 shadow-2xl shrink-0"
     >
       {/* Dock Top Drag Resizer Handle */}

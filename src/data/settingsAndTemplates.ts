@@ -103,11 +103,48 @@ export function saveUserProfileSettings(profile: UserProfileSettings) {
 // ===============================================
 export type UiTheme = 'dark' | 'light';
 
+/** Selectable console themes. Each is available in light and dark. */
+export type UiThemePreset = 'broadcast' | 'clean' | 'pro';
+
+export interface UiThemePresetInfo {
+  id: UiThemePreset;
+  name: string;
+  description: string;
+  /** Mode this theme was designed around; used when first selected. */
+  preferredMode: UiTheme;
+}
+
+export const UI_THEME_PRESETS: UiThemePresetInfo[] = [
+  {
+    id: 'broadcast',
+    name: 'Broadcast Console',
+    description: 'Cool blue-black, calm and legible. Built for a dim media booth.',
+    preferredMode: 'dark'
+  },
+  {
+    id: 'clean',
+    name: 'Modern Clean',
+    description: 'Airy spacing and soft corners. Best in a bright room.',
+    preferredMode: 'light'
+  },
+  {
+    id: 'pro',
+    name: 'High-Density Pro',
+    description: 'Compact and high contrast. More on screen, fewer scrolls.',
+    preferredMode: 'dark'
+  }
+];
+
+/** How a multi-verse scripture range is turned into slides. */
+export type VerseSplitMode = 'combined' | 'per_verse';
+
 export interface AppSettings {
   slideActivationMode: 'double_click' | 'single_click';
   autoLiveSearchOnlineSongs: boolean;
   stageDisplayFontSize: 'normal' | 'large' | 'xlarge';
   uiTheme: UiTheme;
+  uiThemePreset: UiThemePreset;
+  verseSplitMode: VerseSplitMode;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -115,7 +152,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoLiveSearchOnlineSongs: true,
   stageDisplayFontSize: 'large',
   // Dark by default: operators usually run this from a dim media booth.
-  uiTheme: 'dark'
+  uiTheme: 'dark',
+  uiThemePreset: 'broadcast',
+  // One slide for the whole range, matching how ranges behaved before.
+  verseSplitMode: 'combined'
 };
 
 const APP_SETTINGS_KEY = 'LOGOS_APP_SETTINGS_V1';
@@ -137,6 +177,14 @@ export function saveAppSettings(settings: AppSettings) {
   }
 }
 
+export function getVerseSplitMode(): VerseSplitMode {
+  return getAppSettings().verseSplitMode === 'per_verse' ? 'per_verse' : 'combined';
+}
+
+export function saveVerseSplitMode(verseSplitMode: VerseSplitMode) {
+  saveAppSettings({ ...getAppSettings(), verseSplitMode });
+}
+
 export function getUiTheme(): UiTheme {
   return getAppSettings().uiTheme === 'light' ? 'light' : 'dark';
 }
@@ -145,12 +193,23 @@ export function saveUiTheme(uiTheme: UiTheme) {
   saveAppSettings({ ...getAppSettings(), uiTheme });
 }
 
+export function getUiThemePreset(): UiThemePreset {
+  const preset = getAppSettings().uiThemePreset;
+  return UI_THEME_PRESETS.some(p => p.id === preset) ? preset : 'broadcast';
+}
+
+export function saveUiThemePreset(uiThemePreset: UiThemePreset) {
+  saveAppSettings({ ...getAppSettings(), uiThemePreset });
+}
+
 /**
- * Light mode works by remapping Tailwind's colour variables (see index.css), so
- * the only thing to toggle is a class on <html>.
+ * Themes are pure token swaps (see index.css): `data-ui-theme` picks the theme's
+ * palette, density and corner treatment, and the `light` class picks the mode.
+ * Nothing else needs to know which theme is active.
  */
-export function applyUiTheme(uiTheme: UiTheme) {
+export function applyTheme(preset: UiThemePreset, uiTheme: UiTheme) {
   const root = document.documentElement;
+  root.setAttribute('data-ui-theme', preset);
   root.classList.toggle('light', uiTheme === 'light');
   root.style.colorScheme = uiTheme;
 }
