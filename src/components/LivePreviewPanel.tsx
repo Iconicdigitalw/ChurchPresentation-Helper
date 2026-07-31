@@ -1,4 +1,5 @@
 import React from 'react';
+import { usePersistedLayout } from '../hooks/usePersistedLayout';
 import { Slide, QuickState, AlertOverlay, ViewMode } from '../types';
 import { SlideCanvas } from './SlideCanvas';
 import { 
@@ -50,7 +51,7 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
   openStageView,
   customWidth
 }) => {
-  const [previewMode, setPreviewMode] = React.useState<'operator' | 'stage'>('operator');
+  const [previewMode, setPreviewMode] = usePersistedLayout('livePreviewMode');
 
   return (
     <aside 

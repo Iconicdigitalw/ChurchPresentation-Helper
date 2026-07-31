@@ -47,10 +47,19 @@ import {
 } from './state/scheduleReducer';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 import { useActiveKeyScope } from './hooks/useActiveKeyScope';
+import { usePersistedLayout } from './hooks/usePersistedLayout';
 import { broadcastLiveSlideState } from './utils/liveDisplayManager';
 
 /** How long to wait after the last edit before writing the schedule to storage. */
 const AUTOSAVE_DEBOUNCE_MS = 700;
+
+/** Prefix shown on the projector banner for each alert category. */
+const ALERT_LABELS: Record<AlertOverlay['type'], string> = {
+  nursery: 'Nursery',
+  urgent: 'Urgent',
+  countdown: 'Countdown',
+  announcement: 'Announcement'
+};
 
 export default function App() {
   // Running order, selection and live output all live in one reducer so the
@@ -94,9 +103,9 @@ export default function App() {
   const [isAutosaveArmed, setIsAutosaveArmed] = useState(false);
   const [persistenceNotice, setPersistenceNotice] = useState<string | null>(null);
 
-  // Resizable Column Widths
-  const [scheduleWidth, setScheduleWidth] = useState(280);
-  const [livePreviewWidth, setLivePreviewWidth] = useState(360);
+  // Resizable column widths, remembered between services.
+  const [scheduleWidth, setScheduleWidth] = usePersistedLayout('scheduleWidth');
+  const [livePreviewWidth, setLivePreviewWidth] = usePersistedLayout('livePreviewWidth');
 
   const currentItem = getCurrentItem(state);
   const nextSlide = getNextSlide(state);
@@ -165,7 +174,9 @@ export default function App() {
     broadcastLiveSlideState(
       isLiveOutputOn ? liveSlide : null,
       quickState,
-      alertOverlay ? `${alertOverlay.title}: ${alertOverlay.message}` : null
+      // AlertOverlay has no `title`; it carries a category and a message. This
+      // previously broadcast the literal string "undefined: ..." to the projector.
+      alertOverlay ? `${ALERT_LABELS[alertOverlay.type] ?? 'Alert'}: ${alertOverlay.message}` : null
     );
   }, [liveSlide, isLiveOutputOn, quickState, alertOverlay]);
 
@@ -285,16 +296,18 @@ export default function App() {
     });
   };
 
-  const handleAddCustomScheduleItem = (title: string, type: ScheduleItem['type']) => {
+  // The schedule rail's "+ Custom Item" button passes no arguments.
+  const handleAddCustomScheduleItem = () => {
+    const title = `Custom Item ${schedule.length + 1}`;
     const newItem: ScheduleItem = {
       id: `item-${Date.now()}`,
       title,
-      type,
+      type: 'custom',
       activeSlideIndex: 0,
       slides: [
         {
           id: `slide-${Date.now()}`,
-          type: type === 'song' ? 'song' : type === 'scripture' ? 'scripture' : 'title',
+          type: 'title',
           header: title,
           body: 'Enter your slide body text here or edit using the panel below.',
           themeStyle: 'modern-dark'
@@ -302,6 +315,16 @@ export default function App() {
       ]
     };
     dispatch({ type: 'addItem', item: newItem });
+  };
+
+  // The rail reports a drag as (fromIndex, toIndex); the reducer takes the list.
+  const handleReorderScheduleItems = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    const items = [...schedule];
+    const [moved] = items.splice(fromIndex, 1);
+    if (!moved) return;
+    items.splice(toIndex, 0, moved);
+    dispatch({ type: 'reorderItems', items });
   };
 
   const handleAddConvertedDeck = (item: ScheduleItem) => {
@@ -398,7 +421,7 @@ export default function App() {
             isLiveOutputOn={isLiveOutputOn}
             onSelectScheduleItem={(id) => dispatch({ type: 'selectItem', id })}
             onMoveItem={(index, direction) => dispatch({ type: 'moveItem', index, direction })}
-            onReorderItems={(items) => dispatch({ type: 'reorderItems', items })}
+            onReorderItems={handleReorderScheduleItems}
             onDeleteItem={handleDeleteScheduleItem}
             onOpenSettingsModal={handleOpenScheduleSettings}
             openSermonConverter={() => setIsSermonModalOpen(true)}
@@ -523,7 +546,6 @@ export default function App() {
         isOpen={isLiveCompanionOpen}
         onClose={() => setIsLiveCompanionOpen(false)}
         onPushSlideToLive={handlePushSlideToLiveDirect}
-        onAddSongItem={(item) => dispatch({ type: 'addItem', item })}
         isMicActive={isMicActive}
         setIsMicActive={setIsMicActive}
       />
@@ -531,8 +553,9 @@ export default function App() {
       <BibleLibraryModal
         isOpen={isBibleModalOpen}
         onClose={() => setIsBibleModalOpen(false)}
+        onAddScriptureItem={(item) => dispatch({ type: 'addItem', item })}
         onPushSlideToLive={handlePushSlideToLiveDirect}
-        initialSearchQuery={searchInitialQuery}
+        initialQuery={searchInitialQuery}
       />
 
       <SongLibraryModal
@@ -546,20 +569,21 @@ export default function App() {
       <AIMediaGeneratorModal
         isOpen={isMediaGenOpen}
         onClose={() => setIsMediaGenOpen(false)}
-        activeSlide={currentItem?.slides[activeSlideIndex] || null}
-        onUpdateSlideBg={(bgUrl) => {
+        onApplyBackgroundImage={(imageUrl) => {
           const target = currentItem?.slides[activeSlideIndex];
           if (target) {
-            dispatch({ type: 'updateSlide', slideId: target.id, patch: { bgImageUrl: bgUrl } });
+            dispatch({ type: 'updateSlide', slideId: target.id, patch: { bgImageUrl: imageUrl } });
           }
         }}
-        initialPrompt={searchInitialQuery}
+        initialQuery={searchInitialQuery}
       />
 
       <AlertOverlayModal
         isOpen={isAlertModalOpen}
         onClose={() => setIsAlertModalOpen(false)}
         onSendAlert={(alert) => setAlertOverlay(alert)}
+        onClearAlert={() => setAlertOverlay(null)}
+        currentAlert={alertOverlay}
       />
 
       <ScheduleItemSettingsModal

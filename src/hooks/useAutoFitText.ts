@@ -1,4 +1,4 @@
-import { RefObject, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
 export interface UseAutoFitTextOptions {
   /** Smallest size (px) the text may shrink to before it is simply clipped. */
@@ -11,9 +11,9 @@ export interface UseAutoFitTextOptions {
 
 export interface AutoFitText<C extends HTMLElement, T extends HTMLElement> {
   /** Attach to the box the text has to fit inside. Must have a bounded size. */
-  containerRef: RefObject<C | null>;
+  containerRef: (node: C | null) => void;
   /** Attach to the element that carries the text (font size is written here). */
-  textRef: RefObject<T | null>;
+  textRef: (node: T | null) => void;
   /** Manual re-measure, for changes the hook cannot observe on its own. */
   refit: () => void;
 }
@@ -25,10 +25,10 @@ const FIT_TOLERANCE_PX = 1;
  * Measurement-based text auto-fit.
  *
  * Binary-searches the largest font size at which `textRef` overflows its
- * `containerRef` in neither dimension, then re-runs whenever the text changes
- * or the container is resized. The container must be size-bounded by its own
- * layout (e.g. `flex-1 min-h-0 overflow-hidden`) — if it grows with its
- * content there is nothing to fit against.
+ * `containerRef` in neither dimension, then re-runs whenever the text changes,
+ * the container is resized, or either element is re-mounted. The container must
+ * be size-bounded by its own layout (e.g. `flex-1 min-h-0 overflow-hidden`) —
+ * if it grows with its content there is nothing to fit against.
  */
 export function useAutoFitText<
   C extends HTMLElement = HTMLDivElement,
@@ -36,15 +36,17 @@ export function useAutoFitText<
 >(content: string, options: UseAutoFitTextOptions = {}): AutoFitText<C, T> {
   const { minFontSize = 8, maxFontSize = 96, maxIterations = 10 } = options;
 
-  const containerRef = useRef<C | null>(null);
-  const textRef = useRef<T | null>(null);
+  const containerElRef = useRef<C | null>(null);
+  const textElRef = useRef<T | null>(null);
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const frameRef = useRef(0);
   // Size the last fit was computed for; lets the observer ignore the reflows
   // our own font-size writes may cause.
   const fittedSizeRef = useRef({ width: 0, height: 0 });
 
   const fitText = useCallback(() => {
-    const container = containerRef.current;
-    const text = textRef.current;
+    const container = containerElRef.current;
+    const text = textElRef.current;
     if (!container || !text) return;
 
     const availableWidth = container.clientWidth;
@@ -92,31 +94,59 @@ export function useAutoFitText<
     text.style.fontSize = `${best}px`;
   }, [content, minFontSize, maxFontSize, maxIterations]);
 
+  // Latest fitter, reachable from ref callbacks that must not change identity.
+  const fitTextRef = useRef(fitText);
+  fitTextRef.current = fitText;
+
+  const observeContainer = useCallback(() => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
+
+    const container = containerElRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(() => {
+      const { width, height } = fittedSizeRef.current;
+      // Same box as last time: this is our own reflow echoing back.
+      if (container.clientWidth === width && container.clientHeight === height) return;
+      // One fit per frame, no matter how noisy the resize stream is.
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = requestAnimationFrame(() => fitTextRef.current());
+    });
+
+    observer.observe(container);
+    observerRef.current = observer;
+  }, []);
+
+  // Callback refs: a re-mounted subtree (quick states swap the slide body out)
+  // gets measured and observed again instead of keeping a stale element.
+  const containerRef = useCallback(
+    (node: C | null) => {
+      containerElRef.current = node;
+      observeContainer();
+      if (node) fitTextRef.current();
+    },
+    [observeContainer]
+  );
+
+  const textRef = useCallback((node: T | null) => {
+    textElRef.current = node;
+    if (node) fitTextRef.current();
+  }, []);
+
   // Fit before paint so operators never see a frame of overflowing text.
   useLayoutEffect(() => {
     fitText();
   }, [fitText]);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container || typeof ResizeObserver === 'undefined') return;
-
-    let frame = 0;
-    const observer = new ResizeObserver(() => {
-      const { width, height } = fittedSizeRef.current;
-      // Same box as last time: this is our own reflow echoing back.
-      if (container.clientWidth === width && container.clientHeight === height) return;
-      // One fit per frame, no matter how noisy the resize stream is.
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(fitText);
-    });
-
-    observer.observe(container);
     return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
+      cancelAnimationFrame(frameRef.current);
+      observerRef.current?.disconnect();
     };
-  }, [fitText]);
+  }, []);
 
-  return { containerRef, textRef, refit: fitText };
+  const refit = useCallback(() => fitTextRef.current(), []);
+
+  return { containerRef, textRef, refit };
 }

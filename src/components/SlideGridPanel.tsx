@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { usePersistedLayout } from '../hooks/usePersistedLayout';
 import { Slide, ScheduleItem } from '../types';
 import {
   Edit3, 
@@ -78,8 +79,8 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
   const [showThemeMenuSlideId, setShowThemeMenuSlideId] = useState<string | null>(null);
   
   // View options: Grid vs List layout, and Thumbnail size
-  const [layoutMode, setLayoutMode] = useState<'grid' | 'list'>('grid');
-  const [thumbnailSize, setThumbnailSize] = useState<'small' | 'medium' | 'large'>('medium');
+  const [layoutMode, setLayoutMode] = usePersistedLayout('slideLayoutMode');
+  const [thumbnailSize, setThumbnailSize] = usePersistedLayout('slideThumbnailSize');
 
   // Template Modal / Selector states
   const [savedTemplates, setSavedTemplates] = useState<CustomTemplate[]>(getSavedTemplates());

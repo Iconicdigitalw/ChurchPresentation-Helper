@@ -32,6 +32,7 @@ import {
 import { PRESET_SONGS } from '../data/mockData';
 import { getSavedCustomSongs } from '../data/settingsAndTemplates';
 import { getActiveKeyScope } from '../hooks/useActiveKeyScope';
+import { usePersistedLayout } from '../hooks/usePersistedLayout';
 
 interface ContextWorkspacePanelProps {
   currentItem: ScheduleItem | null;
@@ -60,11 +61,11 @@ export const ContextWorkspacePanel: React.FC<ContextWorkspacePanelProps> = ({
   onSelectScheduleItem,
   onSelectSlideInItem
 }) => {
-  const [activeTab, setActiveTab] = useState<TabType>('bible');
+  const [activeTab, setActiveTab] = usePersistedLayout('contextTab');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVersion, setSelectedVersion] = useState('NIV');
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [dockHeight, setDockHeight] = useState(280);
+  const [isExpanded, setIsExpanded] = usePersistedLayout('contextDockExpanded');
+  const [dockHeight, setDockHeight] = usePersistedLayout('contextDockHeight');
 
   // Drag handler for manual vertical height adjustment
   const handleDockResizeStart = (e: React.MouseEvent) => {
