@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Slide, ScheduleItem, ThemeStyle } from '../types';
-import { THEME_PRESETS } from '../data/mockData';
-import { 
+import { Slide, ScheduleItem } from '../types';
+import {
   Edit3, 
   Trash2, 
   Plus, 
@@ -27,11 +26,10 @@ import {
   CustomTemplate 
 } from '../data/settingsAndTemplates';
 import { ContextWorkspacePanel } from './ContextWorkspacePanel';
+import { SlideCanvas, getThemeClass } from './SlideCanvas';
 
-export const getThemeClass = (style: ThemeStyle) => {
-  const preset = THEME_PRESETS.find(p => p.id === style);
-  return preset ? preset.bgClass : 'bg-slate-900';
-};
+// Re-exported for the settings modal, which shows the same slide surfaces.
+export { getThemeClass };
 
 interface SlideGridPanelProps {
   currentItem: ScheduleItem | null;
@@ -129,26 +127,6 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
   const handleSlideThumbnailDoubleClick = (idx: number) => {
     if (slideActivationMode === 'double_click') {
       onSelectSlide(idx, true);
-    }
-  };
-
-  // Compute fitted text size classes based on slide content length & zoom setting
-  const getFittedFontClasses = (text: string = '', header: string = '', size: 'small' | 'medium' | 'large' = 'medium') => {
-    const totalLength = (text?.length || 0) + (header?.length || 0) * 1.5;
-    
-    if (size === 'small') {
-      if (totalLength > 180) return { header: 'text-[8px]', body: 'text-[7.5px] leading-tight', ref: 'text-[7px]' };
-      if (totalLength > 90) return { header: 'text-[9px]', body: 'text-[8.5px] leading-tight', ref: 'text-[7.5px]' };
-      return { header: 'text-[10px]', body: 'text-[9px] leading-snug', ref: 'text-[8px]' };
-    } else if (size === 'large') {
-      if (totalLength > 220) return { header: 'text-[11px]', body: 'text-[10px] leading-snug', ref: 'text-[9px]' };
-      if (totalLength > 110) return { header: 'text-[13px]', body: 'text-[12px] leading-snug', ref: 'text-[10px]' };
-      return { header: 'text-[15px]', body: 'text-[14px] leading-relaxed', ref: 'text-[11px]' };
-    } else {
-      // medium
-      if (totalLength > 200) return { header: 'text-[9.5px]', body: 'text-[8.5px] leading-tight', ref: 'text-[7.5px]' };
-      if (totalLength > 100) return { header: 'text-[11px]', body: 'text-[10px] leading-snug', ref: 'text-[8.5px]' };
-      return { header: 'text-[12px]', body: 'text-[11px] leading-snug', ref: 'text-[9px]' };
     }
   };
 
@@ -268,7 +246,6 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
               const isLive = slide.id === liveSlideId;
               const isSelected = idx === activeSlideIndex;
               const isEditing = slide.id === editingSlideId;
-              const fontClasses = getFittedFontClasses(slide.body, slide.header, thumbnailSize);
 
               return (
                 <div
@@ -281,62 +258,18 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
                       : 'border-slate-800 hover:border-slate-700 bg-slate-900'
                   }`}
                 >
-                  {/* Thumbnail Preview Area (16:9 Widescreen) - Exact Miniature Replica of Live Output Screen */}
+                  {/* Thumbnail Preview Area (16:9) - scaled replica of the live output */}
                   <div
                     onClick={() => handleSlideThumbnailClick(idx)}
                     onDoubleClick={() => handleSlideThumbnailDoubleClick(idx)}
-                    className={`theme-locked-dark relative aspect-video w-full cursor-pointer select-none overflow-hidden rounded-2xl p-2 sm:p-2.5 flex flex-col justify-between ${
-                      slide.bgImageUrl ? 'bg-cover bg-center' : getThemeClass(slide.themeStyle)
-                    }`}
-                    style={
-                      slide.bgImageUrl
-                        ? { backgroundImage: `url(${slide.bgImageUrl})` }
-                        : undefined
-                    }
+                    className="relative w-full cursor-pointer"
                     title="Click or double-click to present live"
                   >
-                    {/* Subtle Dark Overlay if background image */}
-                    {slide.bgImageUrl && (
-                      <div className="absolute inset-0 bg-black/40 backdrop-blur-[0.5px]" />
-                    )}
-
-                    {/* Top Row: Header (Left) & Scripture Ref (Right) - Identical to Live Screen */}
-                    <div className="relative z-10 flex items-center justify-between text-[9px] xs:text-[10px] font-bold text-amber-300 w-full min-h-[16px] pl-8 pr-12 pt-0.5">
-                      <span className="uppercase tracking-widest drop-shadow-md truncate max-w-[65%]">
-                        {slide.header}
-                      </span>
-                      {slide.reference && (
-                        <span className="bg-black/60 px-1.5 py-0.5 rounded border border-white/10 text-slate-100 font-semibold text-[8px] xs:text-[9px] shrink-0">
-                          {slide.reference}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Middle Row: Main Slide Text Body & Bullet Points - Identical to Live Screen */}
-                    <div className="relative z-10 my-auto text-center px-2 py-0.5 flex flex-col items-center justify-center max-h-[70%] overflow-hidden">
-                      <p className={`${slide.type === 'scripture' ? 'font-serif italic text-amber-100 font-semibold' : `${fontClasses.body} font-extrabold text-slate-100`} leading-snug drop-shadow-lg whitespace-pre-line break-words max-w-full`}>
-                        {slide.body}
-                      </p>
-                      {slide.bulletPoints && slide.bulletPoints.length > 0 && (
-                        <ul className="mt-1 space-y-0.5 text-[8px] font-medium text-slate-200 text-left max-w-xs mx-auto">
-                          {slide.bulletPoints.map((bp, i) => (
-                            <li key={i} className="flex items-start gap-1 drop-shadow">
-                              <span className="text-amber-400 font-bold">•</span>
-                              <span className="truncate">{bp}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-
-                    {/* Bottom Row: LOGOS AI Live Watermark - Identical to Live Screen */}
-                    <div className="relative z-10 text-[7px] text-white/50 text-right uppercase tracking-widest font-semibold px-1">
-                      LOGOS AI Live
-                    </div>
+                    <SlideCanvas slide={slide} className="rounded-2xl" />
 
                     {/* Floating Overlay Badge (Top-Left): Slide Index Number */}
                     <div className="absolute top-1.5 left-1.5 z-20 pointer-events-none">
-                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-black/80 text-slate-100 border border-white/20 shadow-md">
+                      <span className="theme-locked-dark text-[9px] font-black px-1.5 py-0.5 rounded bg-black/80 text-slate-100 border border-white/20 shadow-md">
                         #{idx + 1}
                       </span>
                     </div>
@@ -349,7 +282,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
                           LIVE
                         </span>
                       ) : (
-                        <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-black/70 text-slate-300 capitalize border border-white/10 shadow">
+                        <span className="theme-locked-dark text-[9px] font-semibold px-1.5 py-0.5 rounded bg-black/70 text-slate-300 capitalize border border-white/10 shadow">
                           {slide.type}
                         </span>
                       )}
@@ -358,7 +291,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
                     {/* Floating Overlay Badge (Bottom-Left): Speaker Notes Indicator */}
                     {slide.speakerNotes && (
                       <div className="absolute bottom-1.5 left-1.5 z-20 pointer-events-none">
-                        <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-black/80 text-amber-300/90 border border-amber-500/30 flex items-center gap-1 shadow">
+                        <span className="theme-locked-dark text-[8px] font-bold px-1.5 py-0.5 rounded bg-black/80 text-amber-300/90 border border-amber-500/30 flex items-center gap-1 shadow">
                           📝 Notes
                         </span>
                       </div>
@@ -460,20 +393,9 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
                       #{idx + 1}
                     </span>
 
-                    {/* Mini Thumbnail Preview */}
-                    <div
-                      className={`theme-locked-dark w-32 aspect-video shrink-0 rounded-xl overflow-hidden p-2 flex flex-col justify-between border border-white/10 shadow relative ${
-                        slide.bgImageUrl ? 'bg-cover bg-center' : getThemeClass(slide.themeStyle)
-                      }`}
-                      style={slide.bgImageUrl ? { backgroundImage: `url(${slide.bgImageUrl})` } : undefined}
-                    >
-                      {slide.bgImageUrl && <div className="absolute inset-0 bg-black/40" />}
-                      <span className="relative z-10 text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-black/60 text-slate-100 self-start">
-                        {slide.type}
-                      </span>
-                      <p className="relative z-10 text-[8px] font-bold text-slate-100 text-center truncate drop-shadow">
-                        {slide.header || slide.body}
-                      </p>
+                    {/* Mini Thumbnail Preview (same scaled canvas as the grid) */}
+                    <div className="w-32 shrink-0 relative">
+                      <SlideCanvas slide={slide} className="rounded-xl border border-white/10 shadow" />
                     </div>
 
                     {/* Main Slide Info */}

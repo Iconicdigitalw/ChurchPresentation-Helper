@@ -22,7 +22,12 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { ScheduleItem, Slide } from '../types';
-import { 
+import {
+  getVerseSplitMode,
+  saveVerseSplitMode,
+  VerseSplitMode
+} from '../data/settingsAndTemplates';
+import {
   searchLocalBible, 
   searchBibleSmart,
   SmartBibleSearchResult,
@@ -52,9 +57,27 @@ interface BibleChapterResult {
 interface BibleLibraryModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddScriptureItem: (item: ScheduleItem) => void;
+  /** Optional: some callers only ever push live and never build the schedule. */
+  onAddScriptureItem?: (item: ScheduleItem) => void;
   onPushSlideToLive: (slide: Slide) => void;
   initialQuery?: string;
+  /** Alias used by the console shell. */
+  initialSearchQuery?: string;
+}
+
+/** "Isaiah 40:30-31" for a contiguous run, "Isaiah 40:30,33" when it has gaps. */
+function formatVerseRangeReference(verseNumbers: number[], book: string, chapter: number): string {
+  const ordered = Array.from(new Set(verseNumbers)).sort((a, b) => a - b);
+  if (ordered.length === 0) return `${book} ${chapter}`;
+  if (ordered.length === 1) return `${book} ${chapter}:${ordered[0]}`;
+
+  const first = ordered[0];
+  const last = ordered[ordered.length - 1];
+  const isContiguous = last - first === ordered.length - 1;
+
+  return isContiguous
+    ? `${book} ${chapter}:${first}-${last}`
+    : `${book} ${chapter}:${ordered.join(',')}`;
 }
 
 export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
@@ -62,13 +85,30 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
   onClose,
   onAddScriptureItem,
   onPushSlideToLive,
-  initialQuery = ''
+  initialQuery = '',
+  initialSearchQuery = ''
 }) => {
-  const [searchQuery, setSearchQuery] = useState(initialQuery);
+  const seedQuery = initialQuery || initialSearchQuery;
+
+  // Adding to the schedule is optional; never blow up when it is not wired.
+  const addScriptureItem = (item: ScheduleItem) => {
+    if (onAddScriptureItem) {
+      onAddScriptureItem(item);
+    } else {
+      console.warn('BibleLibraryModal: onAddScriptureItem was not provided; item not added.', item);
+    }
+  };
+
+  const [searchQuery, setSearchQuery] = useState(seedQuery);
   const [selectedVersion, setSelectedVersion] = useState('NIV');
   const [activeChapter, setActiveChapter] = useState<BibleChapterResult | null>(null);
   const [smartResult, setSmartResult] = useState<SmartBibleSearchResult | null>(null);
   const [autoCompleteSuggestion, setAutoCompleteSuggestion] = useState<string | null>(null);
+
+  // Multi-verse selection & how a range becomes slides (remembered per operator)
+  const [selectedVerses, setSelectedVerses] = useState<number[]>([]);
+  const [verseSplitMode, setVerseSplitMode] = useState<VerseSplitMode>(getVerseSplitMode());
+  const lastToggledVerseRef = useRef<number | null>(null);
 
   // Custom Uploaded Versions & Modal state
   const [customVersions, setCustomVersions] = useState<CustomBibleVersion[]>([]);
@@ -396,12 +436,13 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
   // Focus & initial instant search on modal open
   useEffect(() => {
     if (isOpen) {
-      const q = initialQuery || 'John 3 16';
+      const q = seedQuery || 'John 3 16';
       setSearchQuery(q);
+      setVerseSplitMode(getVerseSplitMode());
       setTimeout(() => {
         if (inputRef.current) {
           inputRef.current.focus();
-          if (!initialQuery) {
+          if (!seedQuery) {
             inputRef.current.select();
           } else {
             inputRef.current.setSelectionRange(q.length, q.length);
@@ -416,7 +457,7 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
       }
       setIsListening(false);
     }
-  }, [isOpen, initialQuery]);
+  }, [isOpen, seedQuery]);
 
   // Real-time instant search as user types
   useEffect(() => {
@@ -444,21 +485,50 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
     }, 50);
   };
 
+  /**
+   * Pulls a verse range out of a typed reference, e.g. "Isaiah 40:30-31" or
+   * "Isaiah 40 30 - 31". Returns null for single-verse references.
+   */
+  const parseRequestedVerseRange = (query: string): { start: number; end: number } | null => {
+    const match = query.trim().match(/(\d+)\s*[:.\s]\s*(\d+)\s*[-–—]\s*(\d+)\s*$/);
+    if (!match) return null;
+    const start = parseInt(match[2], 10);
+    const end = parseInt(match[3], 10);
+    if (!start || !end || end <= start) return null;
+    return { start, end };
+  };
+
   const performInstantSearch = (queryStr: string, version: string) => {
     if (!queryStr.trim()) return;
     const result = searchBibleSmart(queryStr, version);
     setSmartResult(result);
 
     if (result.searchType === 'reference' && result.chapterResult) {
+      const chapterResult = result.chapterResult;
       setActiveChapter({
-        reference: result.chapterResult.reference,
-        book: result.chapterResult.book,
-        chapter: result.chapterResult.chapter,
-        targetVerse: result.chapterResult.targetVerse,
-        translation: result.chapterResult.translation,
-        chapterVerses: result.chapterResult.chapterVerses,
-        notice: result.chapterResult.notice
+        reference: chapterResult.reference,
+        book: chapterResult.book,
+        chapter: chapterResult.chapter,
+        targetVerse: chapterResult.targetVerse,
+        translation: chapterResult.translation,
+        chapterVerses: chapterResult.chapterVerses,
+        notice: chapterResult.notice
       });
+
+      // A typed range ("Isaiah 40:30-31") pre-selects those verses so the
+      // split choice is offered straight away.
+      const requestedRange = parseRequestedVerseRange(queryStr);
+      const lastVerse = chapterResult.chapterVerses.length;
+      if (requestedRange && requestedRange.start <= lastVerse) {
+        const rangeEnd = Math.min(requestedRange.end, lastVerse);
+        const verses: number[] = [];
+        for (let v = requestedRange.start; v <= rangeEnd; v++) verses.push(v);
+        setSelectedVerses(verses);
+      } else {
+        setSelectedVerses([]);
+      }
+      lastToggledVerseRef.current = null;
+
       scrollToTargetVerse();
     }
   };
@@ -469,6 +539,67 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
     performInstantSearch(refStr, selectedVersion);
   };
 
+  /**
+   * Single builder for every "add scripture" path so combined and per-verse
+   * ranges (and plain single verses) always produce consistent slides.
+   */
+  const buildScriptureSlides = (
+    verses: BibleVerseItem[],
+    book: string,
+    chapter: number,
+    mode: VerseSplitMode
+  ): Slide[] => {
+    const ordered = [...verses].sort((a, b) => a.verseNumber - b.verseNumber);
+    const stamp = Date.now();
+
+    // One slide per verse, each carrying its own reference
+    if (mode === 'per_verse' && ordered.length > 1) {
+      return ordered.map(v => {
+        const verseRef = `${book} ${chapter}:${v.verseNumber}`;
+        return {
+          id: `scrip-s-${stamp}-${v.verseNumber}`,
+          type: 'scripture',
+          header: verseRef,
+          body: v.text,
+          reference: `${verseRef} (${selectedVersion})`,
+          themeStyle: 'nature-serene'
+        };
+      });
+    }
+
+    // One combined slide keeping the full range reference
+    const rangeRef = formatVerseRangeReference(ordered.map(v => v.verseNumber), book, chapter);
+    return [{
+      id: `scrip-s-${stamp}`,
+      type: 'scripture',
+      header: rangeRef,
+      body: ordered.map(v => v.text).join(' '),
+      reference: `${rangeRef} (${selectedVersion})`,
+      themeStyle: 'nature-serene'
+    }];
+  };
+
+  const buildScriptureItem = (
+    verses: BibleVerseItem[],
+    book: string,
+    chapter: number,
+    mode: VerseSplitMode
+  ): ScheduleItem => {
+    const slides = buildScriptureSlides(verses, book, chapter, mode);
+    const rangeRef = formatVerseRangeReference(verses.map(v => v.verseNumber), book, chapter);
+
+    return {
+      id: `scripture-${Date.now()}`,
+      title: `Scripture: ${rangeRef}`,
+      subtitle: `${selectedVersion} Translation${slides.length > 1 ? ` • ${slides.length} slides` : ''}`,
+      type: 'scripture',
+      activeSlideIndex: 0,
+      slides
+    };
+  };
+
+  // Phrase-search results are always a single card, so they stay one slide and
+  // keep the curated reference string exactly as it is indexed.
   const handleAddMatchedVerseToSchedule = (ref: string, text: string) => {
     const newItem: ScheduleItem = {
       id: `scripture-${Date.now()}`,
@@ -485,7 +616,7 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
         themeStyle: 'nature-serene'
       }]
     };
-    onAddScriptureItem(newItem);
+    addScriptureItem(newItem);
     onClose();
   };
 
@@ -597,27 +728,82 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
 
   const handleAddVerseToSchedule = (verseNum: number, text: string) => {
     if (!activeChapter) return;
-    const refStr = `${activeChapter.book} ${activeChapter.chapter}:${verseNum}`;
 
-    const newItem: ScheduleItem = {
-      id: `scripture-${Date.now()}`,
-      title: `Scripture: ${refStr}`,
-      subtitle: `${selectedVersion} Translation`,
-      type: 'scripture',
-      activeSlideIndex: 0,
-      slides: [
-        {
-          id: `scrip-s-${Date.now()}`,
-          type: 'scripture',
-          header: refStr,
-          body: text,
-          reference: `${refStr} (${selectedVersion})`,
-          themeStyle: 'nature-serene'
-        }
-      ]
-    };
+    const newItem = buildScriptureItem(
+      [{ verseNumber: verseNum, text }],
+      activeChapter.book,
+      activeChapter.chapter,
+      'combined'
+    );
 
-    onAddScriptureItem(newItem);
+    addScriptureItem(newItem);
+    onClose();
+  };
+
+  // ---- Multi-verse selection (range → combined slide or slide per verse) ----
+
+  const selectedVerseItems: BibleVerseItem[] = activeChapter
+    ? activeChapter.chapterVerses.filter(v => selectedVerses.includes(v.verseNumber))
+    : [];
+
+  const selectionReference = activeChapter
+    ? formatVerseRangeReference(selectedVerses, activeChapter.book, activeChapter.chapter)
+    : '';
+
+  // A split choice is only meaningful once the selection spans 2+ verses
+  const canSplitSelection = selectedVerseItems.length > 1;
+  const effectiveSplitMode: VerseSplitMode = canSplitSelection ? verseSplitMode : 'combined';
+  const selectionSlideCount = effectiveSplitMode === 'per_verse' ? selectedVerseItems.length : 1;
+
+  const toggleVerseSelection = (verseNum: number, extendRange: boolean) => {
+    setSelectedVerses(prev => {
+      // Shift-click extends from the last toggled verse to this one
+      if (extendRange && lastToggledVerseRef.current !== null) {
+        const from = Math.min(lastToggledVerseRef.current, verseNum);
+        const to = Math.max(lastToggledVerseRef.current, verseNum);
+        const merged = new Set<number>(prev);
+        for (let v = from; v <= to; v++) merged.add(v);
+        return Array.from(merged).sort((a, b) => a - b);
+      }
+
+      return prev.includes(verseNum)
+        ? prev.filter(v => v !== verseNum)
+        : [...prev, verseNum].sort((a, b) => a - b);
+    });
+    lastToggledVerseRef.current = verseNum;
+  };
+
+  const handleChangeSplitMode = (mode: VerseSplitMode) => {
+    setVerseSplitMode(mode);
+    // Remember the operator's last choice as next time's default
+    saveVerseSplitMode(mode);
+  };
+
+  const handleAddSelectionToSchedule = () => {
+    if (!activeChapter || selectedVerseItems.length === 0) return;
+
+    const newItem = buildScriptureItem(
+      selectedVerseItems,
+      activeChapter.book,
+      activeChapter.chapter,
+      effectiveSplitMode
+    );
+
+    addScriptureItem(newItem);
+    onClose();
+  };
+
+  const handlePushSelectionLive = () => {
+    if (!activeChapter || selectedVerseItems.length === 0) return;
+
+    const slides = buildScriptureSlides(
+      selectedVerseItems,
+      activeChapter.book,
+      activeChapter.chapter,
+      effectiveSplitMode
+    );
+
+    onPushSlideToLive({ ...slides[0], id: `live-scrip-${Date.now()}` });
     onClose();
   };
 
@@ -656,7 +842,7 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
                   <span>Instant Local Database (0ms)</span>
                 </span>
               </div>
-              <p className="text-xs text-slate-400">Type reference or passage (e.g., <code className="text-amber-300 bg-slate-900 px-1 rounded">John 3 16</code> or <code className="text-amber-300 bg-slate-900 px-1 rounded">John 3:16</code>)</p>
+              <p className="text-xs text-slate-400">Type reference, passage or range (e.g., <code className="text-amber-300 bg-slate-900 px-1 rounded">John 3 16</code>, <code className="text-amber-300 bg-slate-900 px-1 rounded">John 3:16</code> or <code className="text-amber-300 bg-slate-900 px-1 rounded">Isaiah 40:30-31</code>)</p>
             </div>
           </div>
           <button 
@@ -955,7 +1141,7 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
                     <span>{activeChapter.book} Chapter {activeChapter.chapter}</span>
                   </h3>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    Click on any verse below to push live or add to service schedule
+                    Click any verse to push live, or tick verses to build a multi-verse passage
                   </p>
                   {activeChapter.notice && (
                     <div className="mt-1 text-[11px] font-bold text-amber-400 bg-amber-950/40 border border-amber-800/60 rounded-lg px-2 py-1 inline-flex items-center gap-1.5">
@@ -971,24 +1157,138 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
                 </div>
               </div>
 
+              {/* Multi-Verse Selection Bar & Slide Split Choice */}
+              {selectedVerseItems.length > 0 && (
+                <div className="sticky top-0 z-20 p-3 bg-slate-900 border border-blue-500/40 rounded-xl shadow-xl space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-extrabold bg-blue-500/20 text-blue-300 border border-blue-500/40 shrink-0">
+                        {selectionReference}
+                      </span>
+                      <span className="text-[11px] font-semibold text-slate-300">
+                        {selectedVerseItems.length} verse{selectedVerseItems.length === 1 ? '' : 's'} selected
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedVerses([]);
+                        lastToggledVerseRef.current = null;
+                      }}
+                      className="text-[11px] font-bold text-slate-400 hover:text-slate-100 flex items-center gap-1 cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                      <span>Clear selection</span>
+                    </button>
+                  </div>
+
+                  {/* Split choice: only meaningful for 2+ verses */}
+                  {canSplitSelection && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">
+                        Slide layout:
+                      </span>
+
+                      <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-1 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleChangeSplitMode('combined')}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                            verseSplitMode === 'combined'
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
+                          }`}
+                          title="Put the whole range on a single slide"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>One combined slide</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleChangeSplitMode('per_verse')}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                            verseSplitMode === 'per_verse'
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
+                          }`}
+                          title="Give every verse its own slide"
+                        >
+                          <Layers className="w-3.5 h-3.5" />
+                          <span>One slide per verse</span>
+                        </button>
+                      </div>
+
+                      <span className="text-[11px] text-slate-400 font-medium">
+                        → {selectionSlideCount} slide{selectionSlideCount === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={handleAddSelectionToSchedule}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Add the selected passage to the service schedule"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-blue-400" />
+                      <span>+ Add Passage to Schedule</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handlePushSelectionLive}
+                      className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold rounded-lg flex items-center gap-1 shadow-md transition-all cursor-pointer"
+                      title="Send the first slide of this passage live"
+                    >
+                      <Tv className="w-3.5 h-3.5 fill-slate-950" />
+                      <span>Go Live</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Verse Cards List */}
               <div className="space-y-2.5">
                 {activeChapter.chapterVerses.map((v, idx) => {
                   const isTarget = v.verseNumber === activeChapter.targetVerse;
+                  const isSelected = selectedVerses.includes(v.verseNumber);
 
                   return (
                     <div
                       key={`verse-${v.verseNumber}-${idx}`}
                       ref={isTarget ? targetVerseRef : undefined}
                       className={`p-3.5 rounded-xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 ${
-                        isTarget
+                        isSelected
+                          ? 'bg-blue-950/30 border-blue-500/80 ring-2 ring-blue-500/30 shadow-lg'
+                          : isTarget
                           ? 'bg-amber-950/30 border-amber-500/80 ring-2 ring-amber-500/30 shadow-lg'
                           : 'bg-slate-900/90 border-slate-800 hover:border-slate-700 hover:bg-slate-800/80'
                       }`}
                     >
                       <div className="flex items-start gap-3 min-w-0 flex-1">
+                        {/* Include-in-passage tick (shift-click extends the range) */}
+                        <button
+                          type="button"
+                          onClick={(e) => toggleVerseSelection(v.verseNumber, e.shiftKey)}
+                          className={`w-5 h-5 shrink-0 mt-0.5 rounded-md border flex items-center justify-center transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-blue-600 border-blue-400 text-white'
+                              : 'bg-slate-950 border-slate-700 text-transparent hover:border-blue-500/70'
+                          }`}
+                          title={isSelected ? 'Remove verse from passage' : 'Add verse to passage (shift-click to extend)'}
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+
                         <span className={`px-2 py-1 rounded-lg text-xs font-extrabold shrink-0 ${
-                          isTarget ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300'
+                          isSelected
+                            ? 'bg-blue-500 text-slate-950'
+                            : isTarget
+                            ? 'bg-amber-500 text-slate-950'
+                            : 'bg-slate-800 text-slate-300'
                         }`}>
                           v.{v.verseNumber}
                         </span>

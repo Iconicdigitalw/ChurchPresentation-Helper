@@ -1,6 +1,6 @@
 import React from 'react';
 import { Slide, QuickState, AlertOverlay, ViewMode } from '../types';
-import { THEME_PRESETS } from '../data/mockData';
+import { SlideCanvas } from './SlideCanvas';
 import { 
   Tv, 
   Eye, 
@@ -51,11 +51,6 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
   customWidth
 }) => {
   const [previewMode, setPreviewMode] = React.useState<'operator' | 'stage'>('operator');
-
-  const getThemeClass = (style?: string) => {
-    const preset = THEME_PRESETS.find(p => p.id === style);
-    return preset ? preset.bgClass : 'bg-slate-900';
-  };
 
   return (
     <aside 
@@ -137,24 +132,17 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
               </div>
             </div>
 
-            {/* Center Live Slide Text */}
-            <div className="my-auto text-center px-2 py-1">
-              {!isLiveOutputOn || quickState === 'black' ? (
-                <p className="text-xs font-extrabold text-zinc-600 tracking-wider uppercase">[ SCREEN BLACK ]</p>
-              ) : quickState === 'clearText' ? (
-                <p className="text-xs font-extrabold text-zinc-600 tracking-wider uppercase">[ TEXT CLEARED ]</p>
-              ) : liveSlide ? (
-                <div className="space-y-0.5">
-                  {liveSlide.header && (
-                    <p className="text-[10px] font-black text-amber-400 uppercase tracking-wide">{liveSlide.header}</p>
-                  )}
-                  <p className="text-xs font-black text-slate-100 leading-snug whitespace-pre-line tracking-tight drop-shadow">
-                    {liveSlide.body}
-                  </p>
-                </div>
-              ) : (
-                <p className="text-xs font-extrabold text-zinc-600">[ NO LIVE SLIDE ]</p>
-              )}
+            {/* Center Live Slide Text (same canvas the stage monitor renders) */}
+            <div className="flex-1 min-h-0 flex items-center justify-center py-1.5">
+              <div className="h-full" style={{ aspectRatio: '16 / 9' }}>
+                <SlideCanvas
+                  slide={liveSlide}
+                  variant="stage"
+                  quickState={!isLiveOutputOn ? 'black' : quickState}
+                  emptyMessage="[ NO LIVE SLIDE ]"
+                  className="rounded-lg"
+                />
+              </div>
             </div>
 
             {/* Bottom Next Slide Bar */}
@@ -174,111 +162,34 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
             )}
           </div>
         ) : (
-          /* Main Program Live Output Preview Box */
-          <div
-            className={`theme-locked-dark relative aspect-video w-full rounded-2xl overflow-hidden shadow-2xl transition-all flex flex-col justify-between p-4 ${
-              isLiveOutputOn
-                ? 'border-2 border-rose-500 ring-2 ring-rose-500/30 shadow-rose-950/50'
-                : 'border border-slate-800'
-            } ${
-              !isLiveOutputOn || quickState === 'black'
-                ? 'bg-black'
-                : quickState === 'clearBg'
-                ? 'bg-slate-950'
-                : liveSlide?.bgImageUrl
-                ? 'bg-cover bg-center'
-                : getThemeClass(liveSlide?.themeStyle)
-            }`}
-            style={
-              isLiveOutputOn && quickState !== 'black' && quickState !== 'clearBg' && liveSlide?.bgImageUrl
-                ? { backgroundImage: `url(${liveSlide.bgImageUrl})` }
-                : undefined
-            }
-          >
-            {/* Logo Quick State */}
-            {quickState === 'logo' && (
-              <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center text-center p-4">
-                <div className="p-3 rounded-2xl bg-gradient-to-br from-amber-500/20 to-indigo-500/20 border border-amber-500/40 mb-2">
-                  <Flame className="w-8 h-8 text-amber-400" />
-                </div>
-                <h2 className="text-base font-extrabold text-slate-100 tracking-wider">
-                  LOGOS CHURCH
-                </h2>
-                <p className="text-[10px] text-slate-400">Welcome to Worship</p>
-              </div>
-            )}
+          /* Main Program Live Output Preview Box - the exact audience canvas */
+          <div className="relative w-full">
+            <SlideCanvas
+              slide={liveSlide}
+              quickState={isLiveOutputOn ? quickState : 'black'}
+              alertMessage={alertOverlay && alertOverlay.show ? alertOverlay.message : null}
+              emptyMessage="[ NO LIVE SLIDE ]"
+              className={`rounded-2xl shadow-2xl transition-all ${
+                isLiveOutputOn
+                  ? 'border-2 border-rose-500 ring-2 ring-rose-500/30 shadow-rose-950/50'
+                  : 'border border-slate-800'
+              }`}
+            />
 
-            {/* Normal Slide Content rendering */}
-            {isLiveOutputOn && quickState !== 'black' && quickState !== 'logo' && liveSlide && (
-              <>
-                {/* Optional Background Overlay if image */}
-                {liveSlide.bgImageUrl && quickState !== 'clearBg' && (
-                  <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" />
-                )}
-
-                {/* Header / Scripture Tag */}
-                <div className="relative z-10 flex items-center justify-between text-[10px] font-bold text-amber-300">
-                  <span className="uppercase tracking-widest drop-shadow-md">
-                    {quickState === 'clearText' ? '' : liveSlide.header}
-                  </span>
-                  {liveSlide.reference && quickState !== 'clearText' && (
-                    <span className="bg-black/60 px-2 py-0.5 rounded border border-white/10 text-slate-100 font-semibold">
-                      {liveSlide.reference}
-                    </span>
-                  )}
-                </div>
-
-                {/* Main Text Content */}
-                {quickState !== 'clearText' && (
-                  <div className="relative z-10 my-auto text-center px-2 py-1">
-                    <p className={`text-sm md:text-base leading-snug drop-shadow-lg whitespace-pre-line ${
-                      liveSlide.type === 'scripture' 
-                        ? 'font-serif italic font-semibold text-amber-100/95 tracking-wide leading-relaxed' 
-                        : 'font-extrabold text-slate-100'
-                    }`}>
-                      {liveSlide.body}
-                    </p>
-
-                    {/* Bullet points if any */}
-                    {liveSlide.bulletPoints && liveSlide.bulletPoints.length > 0 && (
-                      <ul className="mt-2 space-y-1 text-[11px] font-medium text-slate-200 text-left max-w-xs mx-auto">
-                        {liveSlide.bulletPoints.map((bp, i) => (
-                          <li key={i} className="flex items-start gap-1.5 drop-shadow">
-                            <span className="text-amber-400 font-bold">•</span>
-                            <span>{bp}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
-
-                {/* Footer Badge */}
-                <div className="relative z-10 text-[8px] text-white/50 text-right uppercase tracking-widest font-semibold">
-                  LOGOS AI Live
-                </div>
-              </>
-            )}
-
-            {/* Alert Overlay Banner */}
+            {/* Operator-only alert dismiss affordance (never on the projector) */}
             {alertOverlay && alertOverlay.show && (
-              <div className="absolute bottom-2 left-2 right-2 bg-rose-600 text-white border border-rose-400 p-2.5 rounded-xl shadow-2xl flex items-center justify-between gap-2 z-30 animate-bounce">
-                <div className="flex items-center gap-2 text-xs font-bold">
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-slate-100" />
-                  <span>{alertOverlay.message}</span>
-                </div>
-                <button
-                  onClick={onClearAlert}
-                  className="text-[10px] bg-black/50 hover:bg-black/80 px-2 py-0.5 rounded font-bold text-slate-100 border border-white/20"
-                >
-                  Dismiss
-                </button>
-              </div>
+              <button
+                onClick={onClearAlert}
+                className="theme-locked-dark absolute bottom-2 right-2 z-30 text-[10px] bg-black/70 hover:bg-black px-2 py-0.5 rounded font-bold text-slate-100 border border-white/20 flex items-center gap-1"
+              >
+                <AlertTriangle className="w-3 h-3 text-amber-300" />
+                <span>Dismiss</span>
+              </button>
             )}
 
             {/* Muted / Offline State */}
             {!isLiveOutputOn && (
-              <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center text-slate-500">
+              <div className="absolute inset-0 rounded-2xl bg-slate-950/95 flex flex-col items-center justify-center text-slate-500">
                 <EyeOff className="w-8 h-8 mb-1 text-slate-600" />
                 <span className="text-xs font-extrabold uppercase tracking-wider text-slate-300">
                   Live Program Offline
@@ -348,21 +259,10 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
           </div>
 
           {nextSlide ? (
-            <div
-              className={`theme-locked-dark aspect-video w-full rounded-2xl border border-slate-800 p-3.5 flex flex-col justify-between overflow-hidden shadow-xl opacity-90 ${getThemeClass(
-                nextSlide.themeStyle
-              )}`}
-            >
-              <div className="text-[9px] font-bold text-amber-300 uppercase">
-                {nextSlide.header}
-              </div>
-              <div className="text-xs text-slate-100 text-center font-semibold line-clamp-3 my-auto drop-shadow">
-                {nextSlide.body}
-              </div>
-              <div className="text-[9px] text-white/60 text-right font-semibold">
-                {nextSlide.reference || 'Next Slide'}
-              </div>
-            </div>
+            <SlideCanvas
+              slide={nextSlide}
+              className="rounded-2xl border border-slate-800 shadow-xl opacity-90"
+            />
           ) : (
             <div className="aspect-video w-full rounded-2xl border border-dashed border-slate-800 bg-slate-900 flex flex-col items-center justify-center text-slate-500 text-xs font-medium">
               End of schedule items

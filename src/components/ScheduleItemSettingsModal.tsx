@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ScheduleItem, Slide, ThemeStyle } from '../types';
 import { THEME_PRESETS } from '../data/mockData';
-import { getThemeClass } from './SlideGridPanel';
+import { SlideCanvas } from './SlideCanvas';
 import { ConfirmDialog, ConfirmRequest } from './ConfirmDialog';
 import { 
   getSavedTemplates, 
@@ -387,20 +387,9 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
                       {/* Slide Item Header Row */}
                       <div className="p-3 bg-slate-950 flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0 flex-1">
-                          {/* Slide Mini Thumbnail Preview */}
-                          <div
-                            className={`theme-locked-dark w-16 h-9 rounded-lg border border-white/10 shrink-0 p-1 flex flex-col justify-center text-center overflow-hidden relative ${
-                              slide.bgImageUrl ? 'bg-cover bg-center' : getThemeClass(slide.themeStyle)
-                            }`}
-                            style={
-                              slide.bgImageUrl
-                                ? { backgroundImage: `url(${slide.bgImageUrl})` }
-                                : undefined
-                            }
-                          >
-                            <span className="text-[8px] font-black text-amber-300 truncate">
-                              {slide.header || `#${idx + 1}`}
-                            </span>
+                          {/* Slide Mini Thumbnail Preview (scaled live-output canvas) */}
+                          <div className="w-16 shrink-0">
+                            <SlideCanvas slide={slide} className="rounded-lg border border-white/10" />
                           </div>
 
                           <div className="min-w-0 flex-1">
@@ -685,7 +674,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
                       <span className="text-xs font-extrabold text-slate-100 drop-shadow">
                         {preset.name}
                       </span>
-                      <span className="text-[10px] font-semibold text-white/80 bg-black/40 px-2 py-0.5 rounded-md self-start border border-white/10">
+                      <span className="theme-locked-dark text-[10px] font-semibold text-white/80 bg-black/40 px-2 py-0.5 rounded-md self-start border border-white/10">
                         Apply Preset
                       </span>
                     </button>

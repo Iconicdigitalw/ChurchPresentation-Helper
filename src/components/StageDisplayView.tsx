@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Slide, QuickState, AlertOverlay } from '../types';
 import { THEME_PRESETS } from '../data/mockData';
 import { Clock, Tv, X, Flame, AlertCircle } from 'lucide-react';
+import { SlideCanvas } from './SlideCanvas';
 
 interface StageDisplayViewProps {
   liveSlide: Slide | null;
@@ -62,44 +63,17 @@ export const StageDisplayView: React.FC<StageDisplayViewProps> = ({
         </div>
       </div>
 
-      {/* Center: CURRENT LIVE SLIDE (High-Contrast Large Text for Pastor) */}
-      <div className="flex-1 my-6 flex flex-col justify-center items-center text-center px-8 bg-zinc-950 rounded-2xl border border-zinc-900 shadow-2xl relative p-8">
-        {quickState === 'black' ? (
-          <div className="text-zinc-600 font-bold text-2xl uppercase tracking-widest">
-            [ SCREEN IS BLACK ]
-          </div>
-        ) : quickState === 'clearText' ? (
-          <div className="text-zinc-600 font-bold text-2xl uppercase tracking-widest">
-            [ TEXT CLEARED BY OPERATOR ]
-          </div>
-        ) : liveSlide ? (
-          <div className="max-w-5xl space-y-4">
-            {liveSlide.header && (
-              <h2 className="text-2xl md:text-3xl font-black text-amber-400 uppercase tracking-wide">
-                {liveSlide.header}
-              </h2>
-            )}
-
-            <p className="text-3xl md:text-5xl font-black text-slate-100 leading-tight whitespace-pre-line tracking-tight drop-shadow-md">
-              {liveSlide.body}
-            </p>
-
-            {liveSlide.bulletPoints && liveSlide.bulletPoints.length > 0 && (
-              <div className="pt-4 max-w-2xl mx-auto space-y-2 text-left">
-                {liveSlide.bulletPoints.map((bp, i) => (
-                  <div key={i} className="flex items-start gap-3 text-xl md:text-2xl font-bold text-amber-200">
-                    <span className="text-amber-400">•</span>
-                    <span>{bp}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="text-zinc-600 font-bold text-2xl">
-            [ NO LIVE SLIDE SELECTED ]
-          </div>
-        )}
+      {/* Center: CURRENT LIVE SLIDE (scaled replica of the live output) */}
+      <div className="flex-1 min-h-0 my-6 flex flex-col justify-center items-center relative">
+        <div className="h-full max-w-full" style={{ aspectRatio: '16 / 9' }}>
+          <SlideCanvas
+            slide={liveSlide}
+            variant="stage"
+            quickState={quickState}
+            emptyMessage="[ NO LIVE SLIDE SELECTED ]"
+            className="rounded-2xl border border-zinc-900 shadow-2xl"
+          />
+        </div>
 
         {/* Stage Message Overlay if active */}
         {alertOverlay && alertOverlay.show && (
