@@ -53,6 +53,51 @@ export function saveShortcuts(shortcuts: ShortcutBinding[]) {
   }
 }
 
+export interface UserProfileSettings {
+  operatorName: string;
+  userEmail: string;
+  churchName: string;
+  serviceTitle: string;
+  selectedMonitor: 'primary' | 'secondary' | 'stage' | 'custom';
+  monitorX: number;
+  monitorY: number;
+  monitorWidth: number;
+  monitorHeight: number;
+  autoLaunchOnLive: boolean;
+}
+
+export const DEFAULT_USER_PROFILE: UserProfileSettings = {
+  operatorName: 'Media Director',
+  userEmail: 'info@iconicdigitalworld.com',
+  churchName: 'Grace Community Church',
+  serviceTitle: 'Sunday Worship Service',
+  selectedMonitor: 'secondary',
+  monitorX: 1920,
+  monitorY: 0,
+  monitorWidth: 1920,
+  monitorHeight: 1080,
+  autoLaunchOnLive: true
+};
+
+const USER_PROFILE_KEY = 'WORSHIPAL_USER_PROFILE_V1';
+
+export function getUserProfileSettings(): UserProfileSettings {
+  try {
+    const raw = localStorage.getItem(USER_PROFILE_KEY);
+    return raw ? { ...DEFAULT_USER_PROFILE, ...JSON.parse(raw) } : DEFAULT_USER_PROFILE;
+  } catch (e) {
+    return DEFAULT_USER_PROFILE;
+  }
+}
+
+export function saveUserProfileSettings(profile: UserProfileSettings) {
+  try {
+    localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
+  } catch (e) {
+    console.error('Failed to save user profile settings:', e);
+  }
+}
+
 // ===============================================
 // 2. GLOBAL APP SETTINGS (Slide Activation, etc.)
 // ===============================================

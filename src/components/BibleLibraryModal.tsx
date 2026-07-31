@@ -953,9 +953,6 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
                 <div>
                   <h3 className="text-sm font-extrabold text-amber-300 flex items-center gap-2">
                     <span>{activeChapter.book} Chapter {activeChapter.chapter}</span>
-                    <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded uppercase font-semibold">
-                      {selectedVersion}
-                    </span>
                   </h3>
                   <p className="text-[11px] text-slate-400 mt-0.5">
                     Click on any verse below to push live or add to service schedule

@@ -26,6 +26,7 @@ import {
   deleteCustomTemplate, 
   CustomTemplate 
 } from '../data/settingsAndTemplates';
+import { ContextWorkspacePanel } from './ContextWorkspacePanel';
 
 export const getThemeClass = (style: ThemeStyle) => {
   const preset = THEME_PRESETS.find(p => p.id === style);
@@ -44,6 +45,12 @@ interface SlideGridPanelProps {
   openMediaGenerator: () => void;
   slideActivationMode?: 'double_click' | 'single_click';
   onOpenSettingsModal?: (item: ScheduleItem) => void;
+  liveSlide?: Slide | null;
+  schedule?: ScheduleItem[];
+  onPushSlideToLive?: (slide: Slide) => void;
+  onPreviewSlide?: (slide: Slide) => void;
+  onAddScriptureItem?: (item: ScheduleItem) => void;
+  onAddSongItem?: (item: ScheduleItem) => void;
 }
 
 export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
@@ -57,7 +64,13 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
   liveSlideId,
   openMediaGenerator,
   slideActivationMode = 'double_click',
-  onOpenSettingsModal
+  onOpenSettingsModal,
+  liveSlide = null,
+  schedule = [],
+  onPushSlideToLive,
+  onPreviewSlide,
+  onAddScriptureItem,
+  onAddSongItem
 }) => {
   const [editingSlideId, setEditingSlideId] = useState<string | null>(null);
   const [editHeader, setEditHeader] = useState('');
@@ -301,7 +314,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
 
                     {/* Middle Row: Main Slide Text Body & Bullet Points - Identical to Live Screen */}
                     <div className="relative z-10 my-auto text-center px-2 py-0.5 flex flex-col items-center justify-center max-h-[70%] overflow-hidden">
-                      <p className={`${fontClasses.body} font-extrabold text-white leading-snug drop-shadow-lg whitespace-pre-line break-words max-w-full`}>
+                      <p className={`${slide.type === 'scripture' ? 'font-serif italic text-amber-100 font-semibold' : `${fontClasses.body} font-extrabold text-white`} leading-snug drop-shadow-lg whitespace-pre-line break-words max-w-full`}>
                         {slide.body}
                       </p>
                       {slide.bulletPoints && slide.bulletPoints.length > 0 && (
@@ -522,19 +535,39 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
 
       {/* Speaker Notes Footer Bar */}
       {currentItem.slides[activeSlideIndex] && (
-        <div className="p-3.5 bg-slate-900 border-t border-slate-800 flex items-start gap-3 shadow-xl shrink-0">
-          <FileText className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <h5 className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">
-              Speaker Notes (Slide #{activeSlideIndex + 1})
-            </h5>
-            <p className="text-xs text-slate-200 mt-0.5 leading-snug font-medium">
-              {currentItem.slides[activeSlideIndex].speakerNotes ||
-                'No speaker notes attached to this slide.'}
-            </p>
+        <div className="px-3.5 py-2 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <div className="min-w-0 flex-1 truncate">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mr-2">
+                Notes (Slide #{activeSlideIndex + 1}):
+              </span>
+              <span className="text-xs text-slate-200 font-medium">
+                {currentItem.slides[activeSlideIndex].speakerNotes || 'No speaker notes attached to this slide.'}
+              </span>
+            </div>
           </div>
         </div>
       )}
+
+      {/* Context Reader & Live Media Dock (Bible / Songs / Decks) */}
+      <ContextWorkspacePanel
+        currentItem={currentItem}
+        activeSlideIndex={activeSlideIndex}
+        liveSlide={liveSlide}
+        schedule={schedule}
+        onPushSlideToLive={(slide) => {
+          if (onPushSlideToLive) {
+            onPushSlideToLive(slide);
+          }
+        }}
+        onPreviewSlide={onPreviewSlide}
+        onAddScriptureItem={onAddScriptureItem}
+        onAddSongItem={onAddSongItem}
+        onSelectSlideInItem={(slideIdx, goLive) => {
+          onSelectSlide(slideIdx, goLive);
+        }}
+      />
     </div>
   );
 };

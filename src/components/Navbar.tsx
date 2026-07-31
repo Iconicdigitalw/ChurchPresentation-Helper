@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Tv, 
   Sparkles, 
@@ -24,7 +24,14 @@ import {
   ChevronDown,
   RotateCcw,
   Check,
-  MousePointer
+  MousePointer,
+  User,
+  Monitor,
+  Info,
+  Building,
+  Mail,
+  CheckCircle,
+  ShieldAlert
 } from 'lucide-react';
 import { QuickState, ViewMode, SearchMode } from '../types';
 import { 
@@ -32,8 +39,12 @@ import {
   DEFAULT_SHORTCUTS, 
   saveShortcuts, 
   AppSettings, 
-  saveAppSettings 
+  saveAppSettings,
+  getUserProfileSettings,
+  saveUserProfileSettings,
+  UserProfileSettings
 } from '../data/settingsAndTemplates';
+import { openLiveProjectorWindow } from '../utils/liveDisplayManager';
 
 interface NavbarProps {
   isLiveOutputOn: boolean;
@@ -86,6 +97,26 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [editingShortcutId, setEditingShortcutId] = useState<string | null>(null);
   const [keyBuffer, setKeyBuffer] = useState('');
 
+  // Logo Dropdown & Modals State
+  const [isLogoMenuOpen, setIsLogoMenuOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isMonitorModalOpen, setIsMonitorModalOpen] = useState(false);
+  const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
+
+  const [userProfile, setUserProfile] = useState<UserProfileSettings>(getUserProfileSettings());
+
+  const handleSaveProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    saveUserProfileSettings(userProfile);
+    setIsProfileModalOpen(false);
+  };
+
+  const handleLaunchProjectorWindow = () => {
+    openLiveProjectorWindow(userProfile);
+    setIsLiveOutputOn(true);
+    setIsMonitorModalOpen(false);
+  };
+
   const handleStartEditShortcut = (id: string) => {
     setEditingShortcutId(id);
     setKeyBuffer('');
@@ -117,19 +148,82 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <>
       <header className="bg-slate-950 border-b border-slate-800 text-slate-100 sticky top-0 z-40 px-4 py-2 flex flex-wrap items-center justify-between gap-3 shadow-xl shrink-0">
-        {/* Brand & App Title */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-950/50">
+        {/* Brand & App Title with Interactive Settings Dropdown */}
+        <div className="relative z-50">
+          <button
+            onClick={() => setIsLogoMenuOpen(!isLogoMenuOpen)}
+            className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-900 border border-transparent hover:border-slate-800 transition-all text-left cursor-pointer group"
+            title="Click logo for profile, monitor, & settings dropdown"
+          >
+            <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:scale-105 transition-transform">
               <Flame className="w-5 h-5 text-white" />
             </div>
             <div className="flex flex-col">
-              <span className="font-extrabold text-lg tracking-wider text-white flex items-center gap-1.5">
-                LOGOS <span className="text-amber-400 font-semibold text-xs px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">AI</span>
+              <span className="font-black text-lg tracking-wider text-white flex items-center gap-1">
+                WorshiPal<span className="text-amber-400 font-bold text-xs px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30">.com</span>
+                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-amber-400 transition-transform ${isLogoMenuOpen ? 'rotate-180' : ''}`} />
               </span>
-              <span className="text-[10px] text-slate-400 -mt-1 hidden sm:inline">Church Media & Presentation Studio</span>
+              <span className="text-[10px] text-slate-400 -mt-1 hidden sm:inline">{userProfile.churchName || 'Church Media Studio'}</span>
             </div>
-          </div>
+          </button>
+
+          {/* Logo Dropdown Menu */}
+          {isLogoMenuOpen && (
+            <div 
+              className="absolute left-0 top-full mt-2 w-64 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-top-2"
+            >
+              <div className="px-3 py-2 border-b border-slate-800/80 mb-1">
+                <p className="text-xs font-bold text-amber-400">{userProfile.churchName}</p>
+                <p className="text-[11px] text-slate-400 truncate">{userProfile.operatorName} • {userProfile.userEmail}</p>
+              </div>
+
+              <button
+                onClick={() => {
+                  setIsLogoMenuOpen(false);
+                  setIsProfileModalOpen(true);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800 transition-colors text-left"
+              >
+                <User className="w-4 h-4 text-amber-400" />
+                <span>Edit Profile & Church</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setIsLogoMenuOpen(false);
+                  setIsMonitorModalOpen(true);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800 transition-colors text-left"
+              >
+                <Monitor className="w-4 h-4 text-indigo-400" />
+                <span>Multi-Monitor Display Setup</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setIsLogoMenuOpen(false);
+                  setShowSettingsModal(true);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800 transition-colors text-left"
+              >
+                <SettingsIcon className="w-4 h-4 text-purple-400" />
+                <span>Shortcuts & Triggers</span>
+              </button>
+
+              <div className="my-1 border-t border-slate-800/80" />
+
+              <button
+                onClick={() => {
+                  setIsLogoMenuOpen(false);
+                  setIsAboutModalOpen(true);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 transition-colors text-left"
+              >
+                <Info className="w-4 h-4 text-emerald-400" />
+                <span>About WorshiPal.com</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Search Mode Selector Dropdown & Speed Search Unit */}
@@ -428,10 +522,290 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="p-3 bg-slate-950 border-t border-slate-800 flex justify-end">
               <button
                 onClick={() => setShowSettingsModal(false)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 font-bold text-xs rounded-xl text-white transition-colors"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 font-bold text-xs rounded-xl text-white transition-colors cursor-pointer"
               >
                 Done
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* PROFILE & CHURCH DETAILS MODAL                            */}
+      {/* ========================================================= */}
+      {isProfileModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <User className="w-5 h-5 text-amber-400" />
+                <h3 className="font-extrabold text-slate-100 text-sm">Edit Operator Profile & Church</h3>
+              </div>
+              <button 
+                onClick={() => setIsProfileModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProfile} className="p-4 space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-300 font-bold mb-1 flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-amber-400" />
+                  Operator Name
+                </label>
+                <input
+                  type="text"
+                  value={userProfile.operatorName}
+                  onChange={(e) => setUserProfile({ ...userProfile, operatorName: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
+                  placeholder="e.g. Media Director / John Doe"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-bold mb-1 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-amber-400" />
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={userProfile.userEmail}
+                  onChange={(e) => setUserProfile({ ...userProfile, userEmail: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
+                  placeholder="e.g. info@iconicdigitalworld.com"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-bold mb-1 flex items-center gap-1.5">
+                  <Building className="w-3.5 h-3.5 text-amber-400" />
+                  Church / Ministry Name
+                </label>
+                <input
+                  type="text"
+                  value={userProfile.churchName}
+                  onChange={(e) => setUserProfile({ ...userProfile, churchName: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
+                  placeholder="e.g. Grace Community Church"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-bold mb-1 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                  Service Title
+                </label>
+                <input
+                  type="text"
+                  value={userProfile.serviceTitle}
+                  onChange={(e) => setUserProfile({ ...userProfile, serviceTitle: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
+                  placeholder="e.g. Sunday Morning Worship"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsProfileModalOpen(false)}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-xl transition-colors"
+                >
+                  Save Profile
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MULTI-MONITOR DISPLAY SETUP MODAL                         */}
+      {/* ========================================================= */}
+      {isMonitorModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Monitor className="w-5 h-5 text-indigo-400" />
+                <h3 className="font-extrabold text-slate-100 text-sm">Multi-Monitor & Projector Setup</h3>
+              </div>
+              <button 
+                onClick={() => setIsMonitorModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4 text-xs">
+              <p className="text-slate-400 leading-relaxed">
+                Select where WorshiPal.com sends live audience slides and scripture text. Launching the external window will create a dedicated 16:9 full-screen window for your main church projector or TV monitor.
+              </p>
+
+              <div className="space-y-2.5">
+                {/* Secondary Monitor */}
+                <div 
+                  onClick={() => setUserProfile({ ...userProfile, selectedMonitor: 'secondary' })}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                    userProfile.selectedMonitor === 'secondary'
+                      ? 'bg-indigo-950/80 border-indigo-500 ring-1 ring-indigo-500 text-white'
+                      : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-extrabold text-amber-300 flex items-center gap-1.5">
+                      <Tv className="w-4 h-4 text-indigo-400" />
+                      Secondary Extended Monitor / Projector (Recommended)
+                    </span>
+                    {userProfile.selectedMonitor === 'secondary' && <CheckCircle className="w-4 h-4 text-indigo-400" />}
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Target Screen 2 (1920x1080) automatically. Ideal for dual-monitor computer setups.
+                  </p>
+                </div>
+
+                {/* Stage Confidence Monitor */}
+                <div 
+                  onClick={() => setUserProfile({ ...userProfile, selectedMonitor: 'stage' })}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                    userProfile.selectedMonitor === 'stage'
+                      ? 'bg-indigo-950/80 border-indigo-500 ring-1 ring-indigo-500 text-white'
+                      : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-extrabold text-amber-300 flex items-center gap-1.5">
+                      <Radio className="w-4 h-4 text-emerald-400" />
+                      Stage Confidence Display (Screen 3)
+                    </span>
+                    {userProfile.selectedMonitor === 'stage' && <CheckCircle className="w-4 h-4 text-indigo-400" />}
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Target 3rd Screen / Stage Monitor for worship leaders, speakers, and vocalists.
+                  </p>
+                </div>
+
+                {/* Primary Window */}
+                <div 
+                  onClick={() => setUserProfile({ ...userProfile, selectedMonitor: 'primary' })}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                    userProfile.selectedMonitor === 'primary'
+                      ? 'bg-indigo-950/80 border-indigo-500 ring-1 ring-indigo-500 text-white'
+                      : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-extrabold text-amber-300 flex items-center gap-1.5">
+                      <Monitor className="w-4 h-4 text-amber-400" />
+                      Windowed Popout Display
+                    </span>
+                    {userProfile.selectedMonitor === 'primary' && <CheckCircle className="w-4 h-4 text-indigo-400" />}
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Open in a separate popout window for single-monitor setups or testing.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-between items-center border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    saveUserProfileSettings(userProfile);
+                    setIsMonitorModalOpen(false);
+                  }}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+                >
+                  Save Settings
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleLaunchProjectorWindow}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-indigo-600 hover:from-amber-400 hover:to-indigo-500 text-white font-extrabold rounded-xl shadow-lg flex items-center gap-2 cursor-pointer"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>Launch Live Monitor Window</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* ABOUT WORSHIPAL.COM MODAL                                 */}
+      {/* ========================================================= */}
+      {isAboutModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Flame className="w-5 h-5 text-amber-400" />
+                <h3 className="font-extrabold text-slate-100 text-sm">About WorshiPal.com</h3>
+              </div>
+              <button 
+                onClick={() => setIsAboutModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs text-slate-300 leading-relaxed">
+              <div className="flex items-center gap-3 p-3 bg-slate-950 rounded-xl border border-slate-800">
+                <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-indigo-600 rounded-xl flex items-center justify-center shrink-0">
+                  <Flame className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h4 className="font-black text-base text-white">WorshiPal.com</h4>
+                  <p className="text-[10px] text-amber-400 font-semibold">Version 2.5 • Church Presentation Studio</p>
+                </div>
+              </div>
+
+              <p>
+                WorshiPal.com is a full-featured church media and presentation software designed for seamless worship services, live scripture lookup, song slides, AI sermon document parsing, and multi-monitor projection control.
+              </p>
+
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex items-center gap-2 text-slate-200">
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>Multi-Monitor Dual Display Projection</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-200">
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>Instant Scripture Lookup (NIV, KJV, ESV, NLT, NASB)</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-200">
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>Interactive Worship Song Library & Slide Builder</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-200">
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>AI Sermon & Document Slide Converter</span>
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end border-t border-slate-800">
+                <button
+                  onClick={() => setIsAboutModalOpen(false)}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-colors"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

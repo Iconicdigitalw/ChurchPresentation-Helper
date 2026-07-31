@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { 
   ScheduleItem, 
-  ScheduleItemType 
+  ScheduleItemType,
+  Slide
 } from '../types';
 import { 
   Plus, 
@@ -38,6 +39,8 @@ interface SchedulePanelProps {
   openSongLibrary: () => void;
   openMediaGenerator: () => void;
   onAddCustomItem: () => void;
+  onPushSlideToLive?: (slide: Slide) => void;
+  customWidth?: number;
 }
 
 export const SchedulePanel: React.FC<SchedulePanelProps> = ({
@@ -55,7 +58,9 @@ export const SchedulePanel: React.FC<SchedulePanelProps> = ({
   openBibleLibrary,
   openSongLibrary,
   openMediaGenerator,
-  onAddCustomItem
+  onAddCustomItem,
+  onPushSlideToLive,
+  customWidth
 }) => {
   const [filterType, setFilterType] = useState<string>('all');
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
@@ -107,7 +112,10 @@ export const SchedulePanel: React.FC<SchedulePanelProps> = ({
   );
 
   return (
-    <aside className="w-full lg:w-72 bg-slate-900 border-r border-slate-800 flex flex-col h-full shrink-0 select-none text-slate-100 relative z-10">
+    <aside 
+      style={customWidth ? { width: `${customWidth}px` } : undefined}
+      className={`w-full ${customWidth ? '' : 'lg:w-72'} bg-slate-900 border-r border-slate-800 flex flex-col h-full shrink-0 select-none text-slate-100 relative z-10`}
+    >
       {/* Header & Filter */}
       <div className="p-3.5 border-b border-slate-800 space-y-2.5 bg-slate-950">
         <div className="flex items-center justify-between">
@@ -223,7 +231,6 @@ export const SchedulePanel: React.FC<SchedulePanelProps> = ({
                     if (onReorderItems) {
                       onReorderItems(fromIdx, originalIndex);
                     } else {
-                      // Fallback using onMoveItem
                       const diff = originalIndex - fromIdx;
                       const dir = diff > 0 ? 'down' : 'up';
                       for (let i = 0; i < Math.abs(diff); i++) {
@@ -239,110 +246,81 @@ export const SchedulePanel: React.FC<SchedulePanelProps> = ({
                   setDragOverIdx(null);
                 }}
                 onClick={() => onSelectScheduleItem(item.id)}
-                className={`group relative flex items-center justify-between p-2.5 rounded-xl border text-left transition-all cursor-pointer select-none ${
+                onDoubleClick={() => {
+                  if (onPushSlideToLive && item.slides.length > 0) {
+                    onPushSlideToLive(item.slides[0]);
+                  }
+                }}
+                title="Single-click to select. Double-click to project item live."
+                className={`group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-left transition-all cursor-pointer select-none gap-2 ${
                   isBeingDragged
                     ? 'opacity-30 border-dashed border-indigo-500 bg-indigo-950/20'
                     : isBeingDraggedOver
-                    ? 'border-indigo-400 bg-indigo-950/80 ring-2 ring-indigo-500 shadow-xl scale-[1.02]'
+                    ? 'border-indigo-400 bg-indigo-950/80 ring-2 ring-indigo-500 shadow-xl'
                     : hasLiveSlide
-                    ? isSelected
-                      ? 'bg-indigo-950/70 border-rose-500/90 ring-2 ring-rose-500/50 shadow-lg shadow-rose-950/50 text-white'
-                      : 'bg-slate-900/95 border-rose-500/80 ring-1 ring-rose-500/40 shadow-md shadow-rose-950/30 text-white'
+                    ? 'border-l-4 border-l-rose-500 bg-rose-950/20 border-rose-900/60 text-white shadow-md shadow-rose-950/30'
                     : isSelected
-                    ? 'bg-emerald-950/60 border-emerald-500/80 text-white shadow-lg shadow-emerald-950/50 ring-1 ring-emerald-500/40'
-                    : 'bg-slate-900/90 border-slate-800/80 hover:border-slate-700 hover:bg-slate-800/90 text-slate-300'
+                    ? 'border-l-4 border-l-amber-500 bg-slate-800/90 border-slate-700 text-white shadow-md'
+                    : 'border-l-4 border-l-transparent bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-800/80 text-slate-300'
                 }`}
               >
-                {/* Left Info with Drag Handle & Hover Gear */}
-                <div className="flex items-start gap-1.5 min-w-0 flex-1">
-                  {/* Drag Handle Icon & Gear Settings underneath */}
-                  <div className="flex flex-col items-center gap-1 shrink-0 mt-0.5">
-                    <div 
-                      className="text-slate-600 group-hover:text-amber-400 cursor-grab active:cursor-grabbing p-0.5 rounded transition-colors"
-                      title="Drag up or down to reorder schedule"
-                    >
-                      <GripVertical className="w-4 h-4" />
-                    </div>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenSettingsModal?.(item);
-                      }}
-                      className="p-0.5 text-amber-400 hover:text-amber-300 hover:bg-slate-800 rounded transition-all opacity-0 group-hover:opacity-100"
-                      title="Schedule Item Settings & Slide Manager"
-                    >
-                      <Settings className="w-3.5 h-3.5" />
-                    </button>
+                {/* Left Grip + Type Icon + Title & Slide Count */}
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <div 
+                    className="text-slate-600 group-hover:text-amber-400 cursor-grab active:cursor-grabbing shrink-0"
+                    title="Drag to reorder"
+                  >
+                    <GripVertical className="w-3.5 h-3.5" />
                   </div>
 
-                  <div className="mt-0.5 p-1.5 rounded-lg bg-slate-950 border border-slate-800 shrink-0">
+                  <div className="p-1 rounded bg-slate-950 border border-slate-800/80 shrink-0">
                     {getItemIcon(item.type)}
                   </div>
+
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 justify-between pr-1">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[10px] font-extrabold text-slate-500">
-                          #{originalIndex + 1}
-                        </span>
-                        <h4 className="text-xs font-bold truncate leading-tight text-slate-100">
-                          {item.title}
-                        </h4>
-                      </div>
-                      {hasLiveSlide && (
-                        <span className="flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-rose-600 text-white tracking-widest uppercase shadow-md shadow-rose-950/80 animate-pulse shrink-0 border border-rose-400/50">
-                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                          LIVE
-                        </span>
-                      )}
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[10px] font-mono text-slate-500 shrink-0">
+                        #{originalIndex + 1}
+                      </span>
+                      <h4 className="text-xs font-semibold truncate leading-tight text-slate-100">
+                        {item.title}
+                      </h4>
                     </div>
 
-                    {item.subtitle && (
-                      <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                        {item.subtitle}
-                      </p>
-                    )}
-
-                    <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
-                      <span className="px-1.5 py-0.2 rounded bg-slate-950 border border-slate-800 text-indigo-300 font-semibold">
-                        {item.slides.length} {item.slides.length === 1 ? 'slide' : 'slides'}
-                      </span>
-                      {item.key && <span className="text-purple-300">Key: {item.key}</span>}
+                    <div className="flex items-center gap-2 text-[10px] text-slate-400 leading-none mt-0.5">
+                      <span>{item.slides.length} {item.slides.length === 1 ? 'slide' : 'slides'}</span>
+                      {item.key && <span className="text-purple-300 font-semibold">• Key: {item.key}</span>}
+                      {item.subtitle && <span className="truncate text-slate-500 max-w-[120px]">• {item.subtitle}</span>}
                     </div>
                   </div>
                 </div>
 
-                {/* Right Reorder/Actions */}
-                <div className="flex items-center gap-0.5 opacity-75 group-hover:opacity-100 transition-opacity">
+                {/* Right Status Badge & Actions */}
+                <div className="flex items-center gap-1 shrink-0">
+                  {hasLiveSlide && (
+                    <span className="flex items-center gap-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-rose-600 text-white tracking-widest uppercase shadow animate-pulse border border-rose-400/50">
+                      LIVE
+                    </span>
+                  )}
+
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      onMoveItem(originalIndex, 'up');
+                      onOpenSettingsModal?.(item);
                     }}
-                    disabled={originalIndex === 0}
-                    className="p-1 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white disabled:opacity-20"
-                    title="Move Up"
+                    className="p-1 text-slate-400 hover:text-amber-300 hover:bg-slate-800 rounded transition-colors opacity-0 group-hover:opacity-100"
+                    title="Item Settings & Slide Manager"
                   >
-                    <ChevronUp className="w-3.5 h-3.5" />
+                    <Settings className="w-3.5 h-3.5" />
                   </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onMoveItem(originalIndex, 'down');
-                    }}
-                    disabled={originalIndex === schedule.length - 1}
-                    className="p-1 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white disabled:opacity-20"
-                    title="Move Down"
-                  >
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  </button>
+
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       onDeleteItem(item.id);
                     }}
-                    className="p-1 hover:bg-rose-950/80 rounded-md text-slate-400 hover:text-rose-400 transition-colors"
-                    title="Remove from schedule"
+                    className="p-1 text-slate-400 hover:text-rose-400 hover:bg-rose-950/50 rounded transition-colors opacity-0 group-hover:opacity-100"
+                    title="Remove item"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>

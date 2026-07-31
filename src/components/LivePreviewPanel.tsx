@@ -32,6 +32,7 @@ interface LivePreviewPanelProps {
   openStageView: () => void;
   activeViewMode?: ViewMode;
   setActiveViewMode?: (mode: ViewMode) => void;
+  customWidth?: number;
 }
 
 export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
@@ -47,6 +48,7 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
   onGoPrevSlide,
   onPushLive,
   openStageView,
+  customWidth
 }) => {
   const [previewMode, setPreviewMode] = React.useState<'operator' | 'stage'>('operator');
 
@@ -56,7 +58,10 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
   };
 
   return (
-    <aside className="w-full lg:w-80 xl:w-96 bg-slate-900 border-l border-slate-800 flex flex-col h-full overflow-y-auto shrink-0 select-none custom-scrollbar text-slate-100">
+    <aside 
+      style={customWidth ? { width: `${customWidth}px` } : undefined}
+      className={`w-full ${customWidth ? '' : 'lg:w-80 xl:w-96'} bg-slate-900 border-l border-slate-800 flex flex-col h-full overflow-y-auto shrink-0 select-none custom-scrollbar text-slate-100`}
+    >
       {/* 1. LIVE OUTPUT DISPLAY */}
       <div className="p-4 border-b border-slate-800 bg-slate-950 space-y-3">
         <div className="flex items-center justify-between">
@@ -226,7 +231,11 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
                 {/* Main Text Content */}
                 {quickState !== 'clearText' && (
                   <div className="relative z-10 my-auto text-center px-2 py-1">
-                    <p className="text-sm md:text-base font-extrabold text-white leading-snug drop-shadow-lg whitespace-pre-line">
+                    <p className={`text-sm md:text-base leading-snug drop-shadow-lg whitespace-pre-line ${
+                      liveSlide.type === 'scripture' 
+                        ? 'font-serif italic font-semibold text-amber-100/95 tracking-wide leading-relaxed' 
+                        : 'font-extrabold text-white'
+                    }`}>
                       {liveSlide.body}
                     </p>
 

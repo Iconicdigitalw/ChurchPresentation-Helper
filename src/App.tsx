@@ -31,6 +31,7 @@ import {
   getAppSettings, 
   ShortcutBinding 
 } from './data/settingsAndTemplates';
+import { broadcastLiveSlideState } from './utils/liveDisplayManager';
 
 export default function App() {
   // Main State
@@ -38,6 +39,7 @@ export default function App() {
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(INITIAL_SCHEDULE[0].id);
   const [activeSlideIndex, setActiveSlideIndex] = useState<number>(0);
   const [liveSlide, setLiveSlide] = useState<Slide | null>(INITIAL_SCHEDULE[0].slides[0] || null);
+  const [previewOverrideSlide, setPreviewOverrideSlide] = useState<Slide | null>(null);
   const [isLiveOutputOn, setIsLiveOutputOn] = useState<boolean>(true);
   const [quickState, setQuickState] = useState<QuickState>('normal');
   const [alertOverlay, setAlertOverlay] = useState<AlertOverlay | null>(null);
@@ -63,6 +65,42 @@ export default function App() {
   const [isScheduleSettingsOpen, setIsScheduleSettingsOpen] = useState(false);
   const [settingsModalItem, setSettingsModalItem] = useState<ScheduleItem | null>(null);
 
+  // Resizable Column Widths
+  const [scheduleWidth, setScheduleWidth] = useState(280);
+  const [livePreviewWidth, setLivePreviewWidth] = useState(360);
+
+  const handleLeftResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = scheduleWidth;
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      setScheduleWidth(Math.min(Math.max(startW + delta, 180), 550));
+    };
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handleRightResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = livePreviewWidth;
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = startX - moveEvent.clientX;
+      setLivePreviewWidth(Math.min(Math.max(startW + delta, 220), 650));
+    };
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
   const openQuickSearchWithMode = useCallback((query: string = '') => {
     setSearchInitialQuery(query);
     if (searchMode === 'bible') {
@@ -79,8 +117,18 @@ export default function App() {
   // Currently selected item
   const currentItem = schedule.find(item => item.id === selectedScheduleId) || null;
 
+  // Broadcast live slide state to external popout display window in real time
+  useEffect(() => {
+    broadcastLiveSlideState(
+      isLiveOutputOn ? liveSlide : null, 
+      quickState, 
+      alertOverlay ? `${alertOverlay.title}: ${alertOverlay.message}` : null
+    );
+  }, [liveSlide, isLiveOutputOn, quickState, alertOverlay]);
+
   // Calculate Next Slide preview
   const getNextSlide = (): Slide | null => {
+    if (previewOverrideSlide) return previewOverrideSlide;
     if (!currentItem) return null;
     if (activeSlideIndex < currentItem.slides.length - 1) {
       return currentItem.slides[activeSlideIndex + 1];
@@ -118,17 +166,58 @@ export default function App() {
     if (!currentItem) return;
 
     if (activeSlideIndex < currentItem.slides.length - 1) {
-      setActiveSlideIndex(prev => prev + 1);
+      const nextIdx = activeSlideIndex + 1;
+      setActiveSlideIndex(nextIdx);
+      const nextSlide = currentItem.slides[nextIdx];
+      if (nextSlide) {
+        setLiveSlide(nextSlide);
+        setPreviewOverrideSlide(null);
+        setQuickState('normal');
+      }
+    } else {
+      // Advance to next schedule item
+      const currentItemIndex = schedule.findIndex(i => i.id === selectedScheduleId);
+      if (currentItemIndex >= 0 && currentItemIndex < schedule.length - 1) {
+        const nextItem = schedule[currentItemIndex + 1];
+        setSelectedScheduleId(nextItem.id);
+        setActiveSlideIndex(0);
+        if (nextItem.slides[0]) {
+          setLiveSlide(nextItem.slides[0]);
+          setPreviewOverrideSlide(null);
+          setQuickState('normal');
+        }
+      }
     }
-  }, [currentItem, activeSlideIndex]);
+  }, [currentItem, activeSlideIndex, schedule, selectedScheduleId]);
 
   const handleGoPrevSlide = useCallback(() => {
     if (!currentItem) return;
 
     if (activeSlideIndex > 0) {
-      setActiveSlideIndex(prev => prev - 1);
+      const prevIdx = activeSlideIndex - 1;
+      setActiveSlideIndex(prevIdx);
+      const prevSlide = currentItem.slides[prevIdx];
+      if (prevSlide) {
+        setLiveSlide(prevSlide);
+        setPreviewOverrideSlide(null);
+        setQuickState('normal');
+      }
+    } else {
+      // Return to last slide of previous schedule item
+      const currentItemIndex = schedule.findIndex(i => i.id === selectedScheduleId);
+      if (currentItemIndex > 0) {
+        const prevItem = schedule[currentItemIndex - 1];
+        setSelectedScheduleId(prevItem.id);
+        const lastIdx = Math.max(0, prevItem.slides.length - 1);
+        setActiveSlideIndex(lastIdx);
+        if (prevItem.slides[lastIdx]) {
+          setLiveSlide(prevItem.slides[lastIdx]);
+          setPreviewOverrideSlide(null);
+          setQuickState('normal');
+        }
+      }
     }
-  }, [currentItem, activeSlideIndex]);
+  }, [currentItem, activeSlideIndex, schedule, selectedScheduleId]);
 
   const handleGoNextScheduleItem = useCallback(() => {
     const currentItemIndex = schedule.findIndex(i => i.id === selectedScheduleId);
@@ -160,9 +249,15 @@ export default function App() {
   // Global Customizable Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if typing in input/textarea or modal open
+      const targetEl = e.target as HTMLElement;
+      const activeEl = document.activeElement as HTMLElement;
+
+      // Ignore if typing in input/textarea, focused inside context workspace panel, or modal open
       if (
-        ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName) ||
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(targetEl?.tagName) ||
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl?.tagName) ||
+        targetEl?.closest('.context-workspace-panel') ||
+        activeEl?.closest('.context-workspace-panel') ||
         isSermonModalOpen ||
         isPresentationBuilderOpen ||
         isBibleModalOpen ||
@@ -225,24 +320,32 @@ export default function App() {
         return;
       }
 
-      if (e.key === 'ArrowRight' || e.code === 'Space' || matchesShortcut('next_slide')) {
+      if (e.key === 'ArrowRight' || e.code === 'Space' || e.key === 'PageDown' || matchesShortcut('next_slide')) {
         e.preventDefault();
         handleGoNextSlide();
         return;
       }
-      if (e.key === 'ArrowLeft' || matchesShortcut('prev_slide')) {
+      if (e.key === 'ArrowLeft' || e.key === 'PageUp' || matchesShortcut('prev_slide')) {
         e.preventDefault();
         handleGoPrevSlide();
         return;
       }
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        handleGoNextScheduleItem();
+        if (e.shiftKey || e.ctrlKey || e.metaKey) {
+          handleGoNextScheduleItem();
+        } else {
+          handleGoNextSlide();
+        }
         return;
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
-        handleGoPrevScheduleItem();
+        if (e.shiftKey || e.ctrlKey || e.metaKey) {
+          handleGoPrevScheduleItem();
+        } else {
+          handleGoPrevSlide();
+        }
         return;
       }
       if (matchesShortcut('toggle_clear_text')) {
@@ -416,6 +519,7 @@ export default function App() {
 
   const handlePushSlideToLiveDirect = (slide: Slide) => {
     setLiveSlide(slide);
+    setPreviewOverrideSlide(null);
     setQuickState('normal');
   };
 
@@ -568,7 +672,18 @@ export default function App() {
             openSongLibrary={() => setIsSongModalOpen(true)}
             openMediaGenerator={() => setIsMediaGenOpen(true)}
             onAddCustomItem={handleAddCustomScheduleItem}
+            onPushSlideToLive={handlePushSlideToLiveDirect}
+            customWidth={scheduleWidth}
           />
+
+          {/* Left Vertical Resizer Handle */}
+          <div
+            onMouseDown={handleLeftResizeStart}
+            className="hidden lg:flex w-1.5 hover:w-2 bg-slate-800 hover:bg-amber-500/80 active:bg-amber-500 cursor-col-resize transition-all items-center justify-center shrink-0 z-20 group"
+            title="Drag to adjust schedule panel width"
+          >
+            <div className="w-0.5 h-8 bg-slate-600 group-hover:bg-slate-950 rounded-full" />
+          </div>
 
           {/* Slide Operator Grid */}
           <SlideGridPanel
@@ -583,7 +698,25 @@ export default function App() {
             openMediaGenerator={() => setIsMediaGenOpen(true)}
             slideActivationMode={slideActivationMode}
             onOpenSettingsModal={handleOpenScheduleSettings}
+            liveSlide={liveSlide}
+            schedule={schedule}
+            onPushSlideToLive={handlePushSlideToLiveDirect}
+            onPreviewSlide={(slide) => setPreviewOverrideSlide(slide)}
+            onAddScriptureItem={(item) => {
+              setSchedule(prev => [...prev, item]);
+              setSelectedScheduleId(item.id);
+            }}
+            onAddSongItem={handleAddSongItem}
           />
+
+          {/* Right Vertical Resizer Handle */}
+          <div
+            onMouseDown={handleRightResizeStart}
+            className="hidden lg:flex w-1.5 hover:w-2 bg-slate-800 hover:bg-amber-500/80 active:bg-amber-500 cursor-col-resize transition-all items-center justify-center shrink-0 z-20 group"
+            title="Drag to adjust live preview panel width"
+          >
+            <div className="w-0.5 h-8 bg-slate-600 group-hover:bg-slate-950 rounded-full" />
+          </div>
 
           {/* Program Live & Next Preview Panel */}
           <LivePreviewPanel
@@ -601,6 +734,7 @@ export default function App() {
             openStageView={() => setActiveViewMode('confidence')}
             activeViewMode={activeViewMode}
             setActiveViewMode={setActiveViewMode}
+            customWidth={livePreviewWidth}
           />
         </main>
       ) : (

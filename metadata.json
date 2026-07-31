@@ -1,6 +1,6 @@
 {
-  "name": "PraiseFlow AI - Church Presentation Software",
-  "description": "AI-powered church presentation software for worship slides, sermon document parsing, live scripture listening, Bible lookup, and dual-display presentation control.",
+  "name": "WorshiPal.com",
+  "description": "Professional church presentation software for worship slides, sermon documents, Bible lookup, live scripture listening, and multi-monitor display control.",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
