@@ -10,6 +10,8 @@ import { SessionUser } from './types';
 export type Capability =
   /** Gemini/AI credentials and spend. Church admin only, by request. */
   | 'manage_ai_credentials'
+  /** Reach into any church. Hosted-service support staff only. */
+  | 'administer_platform'
   /** Church-wide settings: name, branding, defaults. */
   | 'manage_church_settings'
   /** Create/rename/remove teams. */
@@ -34,6 +36,15 @@ export function isChurchAdmin(user: SessionUser | null): boolean {
   return user?.account.churchRole === 'church_admin';
 }
 
+/**
+ * Hosted-service support staff. This is display/affordance only - the real
+ * check belongs on the server against a verified claim, because a client-side
+ * flag would let anyone grant themselves every church's data.
+ */
+export function isPlatformAdmin(user: SessionUser | null): boolean {
+  return user?.account.platformRole === 'platform_admin';
+}
+
 /** True when the user leads this specific team. */
 export function leadsTeam(user: SessionUser | null, teamId: string): boolean {
   if (isChurchAdmin(user)) return true;
@@ -47,6 +58,9 @@ export function can(user: SessionUser | null, capability: Capability): boolean {
   const teamLead = isTeamLead(user);
 
   switch (capability) {
+    case 'administer_platform':
+      return isPlatformAdmin(user);
+
     // Reserved to the church admin: these carry cost or affect everyone.
     case 'manage_ai_credentials':
     case 'manage_church_settings':
@@ -71,6 +85,7 @@ export function can(user: SessionUser | null, capability: Capability): boolean {
 /** Human-readable role for the account menu and member lists. */
 export function describeRole(user: SessionUser | null): string {
   if (!user) return 'Signed out';
+  if (isPlatformAdmin(user)) return 'Platform Admin';
   if (isChurchAdmin(user)) return 'Church Admin';
   if (isTeamLead(user)) return 'Team Lead';
   return 'Team Member';
@@ -81,6 +96,8 @@ export function explainDenial(capability: Capability): string {
   switch (capability) {
     case 'manage_ai_credentials':
       return 'Only a Church Admin can manage AI credentials.';
+    case 'administer_platform':
+      return 'Reserved for hosted-service support staff.';
     case 'manage_church_settings':
       return 'Only a Church Admin can change church settings.';
     case 'manage_teams':

@@ -153,7 +153,11 @@ export class LocalAccountsAdapter implements AccountsProvider {
       church = {
         id: id('church'),
         name: details.churchName?.trim() || 'My Church',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        // Churches start free and bring their own AI key; upgrading to the
+        // hosted plan is a server-side change, never a client one.
+        plan: 'self_serve',
+        hasOwnAiKey: false
       };
       store.churches.push(church);
       // Every church starts with one team; single-team churches never see more.

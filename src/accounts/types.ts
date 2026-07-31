@@ -12,6 +12,18 @@ import { ScheduleItem } from '../types';
 /** Church-wide authority. Owns billing, AI credentials and every team. */
 export type ChurchRole = 'church_admin' | 'member';
 
+/**
+ * Support staff for the hosted service, above any church.
+ *
+ * This crosses tenant boundaries, so it must be granted by a server-verified
+ * claim and never by a value the client can set. Every cross-church access
+ * should be audit-logged, and these accounts should require MFA.
+ */
+export type PlatformRole = 'platform_admin' | 'none';
+
+/** How a church pays for AI: its own key, or the hosted plan. */
+export type BillingPlan = 'self_serve' | 'managed';
+
 /** Authority inside one team. */
 export type TeamRole = 'team_lead' | 'member';
 
@@ -19,6 +31,14 @@ export interface Church {
   id: string;
   name: string;
   createdAt: string;
+  /**
+   * `self_serve` churches supply their own AI key; `managed` churches are
+   * billed monthly and use the platform's. The key itself is never part of this
+   * record - it stays server-side and is never sent to the browser.
+   */
+  plan: BillingPlan;
+  /** Whether a self-serve church has supplied a key yet, without exposing it. */
+  hasOwnAiKey?: boolean;
 }
 
 export interface Team {
@@ -34,6 +54,11 @@ export interface UserAccount {
   email: string;
   displayName: string;
   churchRole: ChurchRole;
+  /**
+   * Absent for ordinary church users. Mirrored from a server-verified claim for
+   * display only - it must never be the thing that grants access.
+   */
+  platformRole?: PlatformRole;
   createdAt: string;
 }
 
