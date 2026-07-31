@@ -1051,5 +1051,12 @@ async function startServer() {
   });
 }
 
-startServer();
+// On Vercel the platform owns the listener and serves the built client from its
+// CDN, so this module is imported purely for its /api routes (see api/index.ts).
+// Anywhere else - local dev, a plain Node host - we bind a port ourselves.
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
 
