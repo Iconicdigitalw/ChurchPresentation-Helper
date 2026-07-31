@@ -419,8 +419,15 @@ export function searchLocalBible(query: string, version: string = 'NIV'): LocalB
   let matchedChapter = 1;
   let targetVerse = 1;
 
-  // Get string prefix without trailing numbers to match book name
-  const bookQueryPart = rawQ.replace(/\d+/g, '').trim().toLowerCase();
+  // Get string prefix without numbers to match book name. Reference punctuation
+  // ("Isaiah 40:30-31") has to go too, otherwise the leftover ":-" stops every
+  // book from matching and the lookup silently falls back to John.
+  const bookQueryPart = rawQ
+    .replace(/\d+/g, ' ')
+    .replace(/[^a-zA-Z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
 
   // 1. Try to match book name or alias
   if (bookQueryPart) {
@@ -663,8 +670,8 @@ export function isReferenceQuery(query: string): boolean {
   const trimmed = (query || "").trim();
   if (!trimmed) return true;
 
-  // Extract non-numeric prefix
-  const bookQueryPart = trimmed.replace(/[:\d,]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  // Extract non-numeric prefix (verse-range dashes are reference syntax too)
+  const bookQueryPart = trimmed.replace(/[:\d,\-–—]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
   if (!bookQueryPart) {
     return true; // Digits only e.g. "3:16"
   }

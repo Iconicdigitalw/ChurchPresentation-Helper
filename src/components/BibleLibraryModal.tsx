@@ -756,11 +756,16 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
   const selectionSlideCount = effectiveSplitMode === 'per_verse' ? selectedVerseItems.length : 1;
 
   const toggleVerseSelection = (verseNum: number, extendRange: boolean) => {
+    // Read the anchor before moving it: the state updater runs on the next
+    // render, by which point the ref would already point at this verse.
+    const anchorVerse = lastToggledVerseRef.current;
+    lastToggledVerseRef.current = verseNum;
+
     setSelectedVerses(prev => {
       // Shift-click extends from the last toggled verse to this one
-      if (extendRange && lastToggledVerseRef.current !== null) {
-        const from = Math.min(lastToggledVerseRef.current, verseNum);
-        const to = Math.max(lastToggledVerseRef.current, verseNum);
+      if (extendRange && anchorVerse !== null) {
+        const from = Math.min(anchorVerse, verseNum);
+        const to = Math.max(anchorVerse, verseNum);
         const merged = new Set<number>(prev);
         for (let v = from; v <= to; v++) merged.add(v);
         return Array.from(merged).sort((a, b) => a - b);
@@ -770,7 +775,6 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
         ? prev.filter(v => v !== verseNum)
         : [...prev, verseNum].sort((a, b) => a - b);
     });
-    lastToggledVerseRef.current = verseNum;
   };
 
   const handleChangeSplitMode = (mode: VerseSplitMode) => {
