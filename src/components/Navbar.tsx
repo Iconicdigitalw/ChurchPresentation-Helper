@@ -80,6 +80,8 @@ interface NavbarProps {
   setSlideActivationMode: (mode: 'double_click' | 'single_click') => void;
   shortcuts: ShortcutBinding[];
   setShortcuts: React.Dispatch<React.SetStateAction<ShortcutBinding[]>>;
+  /** Lets the console suppress global shortcuts while a Navbar overlay is open. */
+  onOverlayOpenChange?: (open: boolean) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -102,6 +104,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   slideActivationMode,
   setSlideActivationMode,
   shortcuts,
+  onOverlayOpenChange,
   setShortcuts
 }) => {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -147,6 +150,38 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   const toggleUiTheme = () => applyMode(uiTheme === 'light' ? 'dark' : 'light');
+
+  // Any of these covering the console must suppress global shortcuts, or a
+  // keystroke aimed at the dialog repaints the projector behind it.
+  const isAnyOverlayOpen =
+    showSettingsModal ||
+    isProfileModalOpen ||
+    isMonitorModalOpen ||
+    isAboutModalOpen ||
+    isLogoMenuOpen ||
+    isThemeMenuOpen;
+
+  useEffect(() => {
+    onOverlayOpenChange?.(isAnyOverlayOpen);
+  }, [isAnyOverlayOpen, onOverlayOpenChange]);
+
+  // Escape closes whichever overlay is open - operators reach for it by habit.
+  useEffect(() => {
+    if (!isAnyOverlayOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setShowSettingsModal(false);
+      setIsProfileModalOpen(false);
+      setIsMonitorModalOpen(false);
+      setIsAboutModalOpen(false);
+      setIsLogoMenuOpen(false);
+      setIsThemeMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [isAnyOverlayOpen]);
 
   // Close the theme menu on outside click / Escape.
   useEffect(() => {

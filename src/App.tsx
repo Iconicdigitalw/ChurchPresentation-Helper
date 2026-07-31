@@ -98,6 +98,9 @@ export default function App() {
   // Destructive-action guard
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
 
+  // Reported up by the Navbar so its overlays also suppress global shortcuts.
+  const [isNavbarOverlayOpen, setIsNavbarOverlayOpen] = useState(false);
+
   // Autosave / restore
   const [restorable, setRestorable] = useState<PersistedSchedule | null>(null);
   const [isAutosaveArmed, setIsAutosaveArmed] = useState(false);
@@ -211,6 +214,10 @@ export default function App() {
     isMediaGenOpen ||
     isAlertModalOpen ||
     isScheduleSettingsOpen ||
+    // The Navbar owns several overlays of its own (shortcuts, profile, monitor,
+    // about, logo menu). They were missing here, so keystrokes aimed at an open
+    // settings dialog were still driving the projector behind it.
+    isNavbarOverlayOpen ||
     confirmRequest !== null;
 
   const shortcutHandlers = useMemo(
@@ -408,6 +415,7 @@ export default function App() {
         setSlideActivationMode={setSlideActivationMode}
         shortcuts={shortcuts}
         setShortcuts={setShortcuts}
+        onOverlayOpenChange={setIsNavbarOverlayOpen}
       />
 
       {/* Main Workspace Layout */}

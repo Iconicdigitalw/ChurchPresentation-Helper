@@ -30,6 +30,25 @@ interface UseGlobalShortcutsOptions {
 
 const TEXT_ENTRY_TAGS = ['INPUT', 'TEXTAREA', 'SELECT'];
 
+/** Elements the browser natively activates with Enter or Space. */
+const INTERACTIVE_SELECTOR = 'button, a[href], summary, [role="button"], [role="menuitem"], [role="menuitemradio"], [role="tab"], [role="switch"]';
+
+/**
+ * True when Enter/Space belongs to whatever the operator has focused.
+ *
+ * Enter pushes live and Space advances a slide, and both preventDefault. Left
+ * unguarded that swallows activation for every focused control, which made the
+ * entire console keyboard-inoperable: tabbing to a button and pressing Enter
+ * moved the projector instead of pressing the button.
+ */
+function activatesFocusedControl(event: KeyboardEvent): boolean {
+  if (event.key !== 'Enter' && event.code !== 'Space' && event.key !== ' ') return false;
+
+  const active = document.activeElement;
+  if (!active || active === document.body) return false;
+  return active instanceof Element && active.matches(INTERACTIVE_SELECTOR);
+}
+
 /** True when the keystroke belongs to a text field rather than the operator console. */
 function isTypingTarget(event: KeyboardEvent): boolean {
   const target = event.target as HTMLElement | null;
@@ -80,6 +99,9 @@ export function useGlobalShortcuts({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event)) return;
+
+      // Let a focused button/link handle its own Enter or Space.
+      if (activatesFocusedControl(event)) return;
 
       // The context workspace runs its own verse/stanza navigation. While the
       // operator is working in there, arrows must not also drive the schedule.

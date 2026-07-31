@@ -29,7 +29,8 @@ export type ScheduleAction =
   | { type: 'pushActiveSlideLive' }
   | { type: 'pushSlideLive'; slide: Slide }
   | { type: 'previewSlide'; slide: Slide | null }
-  | { type: 'addItem'; item: ScheduleItem }
+  /** `goLive` is opt-in; adding to the running order is not a live action. */
+  | { type: 'addItem'; item: ScheduleItem; goLive?: boolean }
   | { type: 'deleteItem'; id: string }
   | { type: 'moveItem'; index: number; direction: 'up' | 'down' }
   | { type: 'reorderItems'; items: ScheduleItem[] }
@@ -186,12 +187,18 @@ export function scheduleReducer(state: ScheduleState, action: ScheduleAction): S
     case 'previewSlide':
       return { ...state, previewOverrideSlide: action.slide };
 
-    case 'addItem':
-      return goLive(
-        { ...state, schedule: [...state.schedule, action.item] },
-        action.item.slides[0] ?? state.liveSlide,
-        { selectedScheduleId: action.item.id, activeSlideIndex: 0 }
-      );
+    case 'addItem': {
+      // Adding must never touch the projector. Queuing the next song while the
+      // current one is on screen used to replace what the congregation saw.
+      const next: ScheduleState = {
+        ...state,
+        schedule: [...state.schedule, action.item],
+        selectedScheduleId: action.item.id,
+        activeSlideIndex: 0
+      };
+      if (!action.goLive) return next;
+      return goLive(next, action.item.slides[0] ?? state.liveSlide);
+    }
 
     case 'deleteItem': {
       // Never leave the operator with an empty running order.
