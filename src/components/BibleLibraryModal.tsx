@@ -24,6 +24,9 @@ import {
 import { ScheduleItem, Slide } from '../types';
 import { 
   searchLocalBible, 
+  searchBibleSmart,
+  SmartBibleSearchResult,
+  LocalBibleVerseMatch,
   ALL_BIBLE_BOOKS, 
   getCustomBibleVersions, 
   saveCustomBibleVersion, 
@@ -43,6 +46,7 @@ interface BibleChapterResult {
   targetVerse?: number;
   translation: string;
   chapterVerses: BibleVerseItem[];
+  notice?: string;
 }
 
 interface BibleLibraryModalProps {
@@ -63,6 +67,7 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [selectedVersion, setSelectedVersion] = useState('NIV');
   const [activeChapter, setActiveChapter] = useState<BibleChapterResult | null>(null);
+  const [smartResult, setSmartResult] = useState<SmartBibleSearchResult | null>(null);
   const [autoCompleteSuggestion, setAutoCompleteSuggestion] = useState<string | null>(null);
 
   // Custom Uploaded Versions & Modal state
@@ -380,6 +385,14 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [isOpen, isListening, shortcutMode]);
 
+  const isCompleteReference = (query: string): boolean => {
+    const trimmed = query.trim();
+    if (!trimmed) return false;
+    // Matches references with book + chapter [+ verse]
+    // e.g., "John 3 16", "John 3:16", "1 John 3:16", "Genesis 1:1", "Psalm 23", "Deuteronomy 6 4"
+    return /^((?:\d\s+)?[a-zA-Z\s]+)\s+\d+([\s:]\d+)?$/.test(trimmed);
+  };
+
   // Focus & initial instant search on modal open
   useEffect(() => {
     if (isOpen) {
@@ -388,7 +401,11 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
       setTimeout(() => {
         if (inputRef.current) {
           inputRef.current.focus();
-          inputRef.current.setSelectionRange(q.length, q.length);
+          if (!initialQuery) {
+            inputRef.current.select();
+          } else {
+            inputRef.current.setSelectionRange(q.length, q.length);
+          }
         }
       }, 50);
 
@@ -399,7 +416,7 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
       }
       setIsListening(false);
     }
-  }, [isOpen]);
+  }, [isOpen, initialQuery]);
 
   // Real-time instant search as user types
   useEffect(() => {
@@ -429,23 +446,96 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
 
   const performInstantSearch = (queryStr: string, version: string) => {
     if (!queryStr.trim()) return;
-    const result = searchLocalBible(queryStr, version);
+    const result = searchBibleSmart(queryStr, version);
+    setSmartResult(result);
 
-    setActiveChapter({
-      reference: result.reference,
-      book: result.book,
-      chapter: result.chapter,
-      targetVerse: result.targetVerse,
-      translation: result.translation,
-      chapterVerses: result.chapterVerses
-    });
+    if (result.searchType === 'reference' && result.chapterResult) {
+      setActiveChapter({
+        reference: result.chapterResult.reference,
+        book: result.chapterResult.book,
+        chapter: result.chapterResult.chapter,
+        targetVerse: result.chapterResult.targetVerse,
+        translation: result.chapterResult.translation,
+        chapterVerses: result.chapterResult.chapterVerses,
+        notice: result.chapterResult.notice
+      });
+      scrollToTargetVerse();
+    }
+  };
 
-    scrollToTargetVerse();
+  const handleOpenChapterFromMatch = (match: LocalBibleVerseMatch) => {
+    const refStr = `${match.book} ${match.chapter}:${match.verseNumber}`;
+    setSearchQuery(refStr);
+    performInstantSearch(refStr, selectedVersion);
+  };
+
+  const handleAddMatchedVerseToSchedule = (ref: string, text: string) => {
+    const newItem: ScheduleItem = {
+      id: `scripture-${Date.now()}`,
+      title: `Scripture: ${ref}`,
+      subtitle: `${selectedVersion} Translation`,
+      type: 'scripture',
+      activeSlideIndex: 0,
+      slides: [{
+        id: `scrip-s-${Date.now()}`,
+        type: 'scripture',
+        header: ref,
+        body: text,
+        reference: `${ref} (${selectedVersion})`,
+        themeStyle: 'nature-serene'
+      }]
+    };
+    onAddScriptureItem(newItem);
+    onClose();
+  };
+
+  const handlePushMatchedVerseLive = (ref: string, text: string) => {
+    const liveSlideItem: Slide = {
+      id: `live-scrip-${Date.now()}`,
+      type: 'scripture',
+      header: ref,
+      body: text,
+      reference: `${ref} (${selectedVersion})`,
+      themeStyle: 'nature-serene'
+    };
+    onPushSlideToLive(liveSlideItem);
+    onClose();
+  };
+
+  const highlightSearchQuery = (text: string, query: string) => {
+    if (!query.trim()) return text;
+    const terms = query.trim().split(/\s+/).filter(t => t.length > 0);
+    if (terms.length === 0) return text;
+
+    const pattern = new RegExp(`(${terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+    const parts = text.split(pattern);
+
+    return parts.map((part, i) => 
+      terms.some(t => t.toLowerCase() === part.toLowerCase()) ? (
+        <mark key={i} className="bg-amber-400/30 text-amber-200 px-0.5 rounded font-semibold">
+          {part}
+        </mark>
+      ) : (
+        part
+      )
+    );
   };
 
   if (!isOpen) return null;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // If user starts typing a single letter (a-z, A-Z) and search box contains a complete verse/passage reference, replace the query
+    const isSingleLetter = /^[a-zA-Z]$/.test(e.key) && !e.ctrlKey && !e.altKey && !e.metaKey;
+    if (isSingleLetter && isCompleteReference(searchQuery)) {
+      const inputEl = inputRef.current;
+      const isEntirelySelected = inputEl && inputEl.selectionStart === 0 && inputEl.selectionEnd === searchQuery.length;
+      if (!isEntirelySelected) {
+        e.preventDefault();
+        setSearchQuery(e.key);
+        return;
+      }
+    }
+
     if (e.key === 'ArrowDown') {
       if (activeChapter && activeChapter.chapterVerses.length > 0) {
         e.preventDefault();
@@ -480,7 +570,10 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
       }
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (activeChapter) {
+      if (smartResult?.searchType === 'content' && smartResult.contentMatches && smartResult.contentMatches.length > 0) {
+        const topMatch = smartResult.contentMatches[0];
+        handlePushMatchedVerseLive(topMatch.reference, topMatch.text);
+      } else if (activeChapter) {
         const currentVerseObj = activeChapter.chapterVerses.find(v => v.verseNumber === activeChapter.targetVerse);
         if (currentVerseObj) {
           handlePushVerseLive(currentVerseObj.verseNumber, currentVerseObj.text);
@@ -584,6 +677,7 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={(e) => e.target.select()}
                 onKeyDown={handleKeyDown}
                 placeholder="Type or speak book, chapter, verse (e.g. John 3 16, Psalm 23, Romans 8:28)..."
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-24 py-2 text-xs font-semibold text-white focus:outline-none focus:border-blue-500 shadow-inner"
@@ -779,10 +873,83 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
 
         {/* Passage Display & Verse-by-Verse List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-slate-950/50">
-          {activeChapter ? (
+          {smartResult?.searchType === 'content' && smartResult.contentMatches && smartResult.contentMatches.length > 0 ? (
+            <div className="space-y-3">
+              {/* Search Header Banner */}
+              <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-extrabold text-amber-300 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <span>Verse Matches for "{smartResult.query}"</span>
+                    <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded uppercase font-semibold">
+                      {selectedVersion}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Found {smartResult.contentMatches.length} matching scripture verse{smartResult.contentMatches.length === 1 ? '' : 's'}. Click "View Chapter" to load full passage.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-[11px] text-amber-400 font-bold bg-amber-950/60 border border-amber-800/80 px-2.5 py-1 rounded-lg shrink-0">
+                  <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                  <span>Smart Phrase Search</span>
+                </div>
+              </div>
+
+              {/* Matched Verses Cards List */}
+              <div className="space-y-2.5">
+                {smartResult.contentMatches.map((m, idx) => (
+                  <div
+                    key={`match-${m.reference}-${idx}`}
+                    className="p-3.5 rounded-xl border border-slate-800 hover:border-slate-700 bg-slate-900/90 hover:bg-slate-800/80 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm"
+                  >
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-extrabold shrink-0 bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                        {m.reference}
+                      </span>
+
+                      <p className="text-xs md:text-sm font-serif leading-relaxed italic text-slate-200">
+                        "{highlightSearchQuery(m.text, smartResult.query)}"
+                      </p>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2 shrink-0 justify-end pt-2 md:pt-0 border-t md:border-t-0 border-slate-800">
+                      <button
+                        onClick={() => handleOpenChapterFromMatch(m)}
+                        className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                        title="View full chapter context"
+                      >
+                        <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                        <span>View Chapter</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleAddMatchedVerseToSchedule(m.reference, m.text)}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Add this verse to service schedule"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-blue-400" />
+                        <span>+ Schedule</span>
+                      </button>
+
+                      <button
+                        onClick={() => handlePushMatchedVerseLive(m.reference, m.text)}
+                        className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold rounded-lg flex items-center gap-1 shadow-md transition-all cursor-pointer"
+                        title="Send verse live on stage immediately"
+                      >
+                        <Tv className="w-3.5 h-3.5 fill-slate-950" />
+                        <span>Go Live</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : activeChapter ? (
             <div className="space-y-3">
               {/* Chapter Header Banner */}
-              <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between">
+              <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-extrabold text-amber-300 flex items-center gap-2">
                     <span>{activeChapter.book} Chapter {activeChapter.chapter}</span>
@@ -793,9 +960,15 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
                   <p className="text-[11px] text-slate-400 mt-0.5">
                     Click on any verse below to push live or add to service schedule
                   </p>
+                  {activeChapter.notice && (
+                    <div className="mt-1 text-[11px] font-bold text-amber-400 bg-amber-950/40 border border-amber-800/60 rounded-lg px-2 py-1 inline-flex items-center gap-1.5">
+                      <HelpCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>{activeChapter.notice}</span>
+                    </div>
+                  )}
                 </div>
 
-                <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                <div className="flex items-center gap-1 text-[11px] text-slate-400 shrink-0">
                   <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                   <span>Target: Verse {activeChapter.targetVerse}</span>
                 </div>

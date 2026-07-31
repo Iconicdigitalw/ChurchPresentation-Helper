@@ -3,6 +3,15 @@ export interface LocalBibleVerse {
   text: string;
 }
 
+export interface LocalBibleVerseMatch {
+  reference: string;
+  book: string;
+  chapter: number;
+  verseNumber: number;
+  text: string;
+  translation: string;
+}
+
 export interface LocalBibleChapterResult {
   reference: string;
   book: string;
@@ -10,6 +19,15 @@ export interface LocalBibleChapterResult {
   targetVerse: number;
   translation: string;
   chapterVerses: LocalBibleVerse[];
+  notice?: string;
+}
+
+export interface SmartBibleSearchResult {
+  searchType: 'reference' | 'content';
+  query: string;
+  chapterResult?: LocalBibleChapterResult;
+  contentMatches?: LocalBibleVerseMatch[];
+  notice?: string;
 }
 
 export const ALL_BIBLE_BOOKS = [
@@ -22,6 +40,18 @@ export const ALL_BIBLE_BOOKS = [
   "Philippians", "Colossians", "1 Thessalonians", "2 Thessalonians", "1 Timothy", "2 Timothy", "Titus", "Philemon",
   "Hebrews", "James", "1 Peter", "2 Peter", "1 John", "2 John", "3 John", "Jude", "Revelation"
 ];
+
+// Maximum chapter count per book for exact Bible verification
+export const BIBLE_BOOK_MAX_CHAPTERS: Record<string, number> = {
+  "Genesis": 50, "Exodus": 40, "Leviticus": 27, "Numbers": 36, "Deuteronomy": 34, "Joshua": 24, "Judges": 21, "Ruth": 4,
+  "1 Samuel": 31, "2 Samuel": 24, "1 Kings": 22, "2 Kings": 25, "1 Chronicles": 29, "2 Chronicles": 36, "Ezra": 10, "Nehemiah": 13, "Esther": 10,
+  "Job": 42, "Psalms": 150, "Proverbs": 31, "Ecclesiastes": 12, "Song of Solomon": 8, "Isaiah": 66, "Jeremiah": 52, "Lamentations": 5, "Ezekiel": 48,
+  "Daniel": 12, "Hosea": 14, "Joel": 3, "Amos": 9, "Obadiah": 1, "Jonah": 4, "Micah": 7, "Nahum": 3, "Habakkuk": 3, "Zephaniah": 3,
+  "Haggai": 2, "Zechariah": 14, "Malachi": 4,
+  "Matthew": 28, "Mark": 16, "Luke": 24, "John": 21, "Acts": 28, "Romans": 16, "1 Corinthians": 16, "2 Corinthians": 13, "Galatians": 6, "Ephesians": 6,
+  "Philippians": 4, "Colossians": 4, "1 Thessalonians": 5, "2 Thessalonians": 3, "1 Timothy": 6, "2 Timothy": 4, "Titus": 3, "Philemon": 1,
+  "Hebrews": 13, "James": 5, "1 Peter": 5, "2 Peter": 3, "1 John": 5, "2 John": 1, "3 John": 1, "Jude": 1, "Revelation": 22
+};
 
 // Alias mapping for common abbreviations
 const BOOK_ALIASES: Record<string, string> = {
@@ -389,9 +419,6 @@ export function searchLocalBible(query: string, version: string = 'NIV'): LocalB
   let matchedChapter = 1;
   let targetVerse = 1;
 
-  // Extract all numbers in query
-  const numbersInQuery = rawQ.match(/\d+/g) || [];
-
   // Get string prefix without trailing numbers to match book name
   const bookQueryPart = rawQ.replace(/\d+/g, '').trim().toLowerCase();
 
@@ -415,17 +442,56 @@ export function searchLocalBible(query: string, version: string = 'NIV'): LocalB
     }
   }
 
-  // Parse chapter and verse numbers
-  if (numbersInQuery.length === 1) {
-    matchedChapter = parseInt(numbersInQuery[0], 10) || 1;
-    targetVerse = 1;
-  } else if (numbersInQuery.length >= 2) {
-    matchedChapter = parseInt(numbersInQuery[0], 10) || 1;
-    targetVerse = parseInt(numbersInQuery[1], 10) || 1;
+  const maxChap = BIBLE_BOOK_MAX_CHAPTERS[matchedBook] || 21;
+
+  // Extract reference numbers AFTER removing the matched book prefix
+  let afterBookStr = rawQ;
+  if (matchedBook) {
+    const bookCore = matchedBook.replace(/^[123]\s+/, '');
+    const bookRegex = new RegExp(`^((?:[123]\\s+)?${bookCore}|${bookQueryPart})`, 'i');
+    afterBookStr = rawQ.replace(bookRegex, '').trim();
+  }
+
+  const referenceNumbers = afterBookStr.match(/\d+/g) || [];
+  let notice: string | undefined = undefined;
+
+  if (referenceNumbers.length > 0) {
+    const rawC = parseInt(referenceNumbers[0], 10) || 1;
+    const rawV = referenceNumbers.length >= 2 ? (parseInt(referenceNumbers[1], 10) || 1) : 1;
+    const strC = referenceNumbers[0];
+
+    // If rawC exceeds the book's total chapters (e.g. "John 34 2" or "John 34")
+    if (rawC > maxChap && strC.length >= 2) {
+      let foundSplit = false;
+      // Attempt splitting digits into Chapter + Verse (e.g., "34" -> Ch 3, V 4; "316" -> Ch 3, V 16)
+      for (let len = strC.length - 1; len >= 1; len--) {
+        const subC = parseInt(strC.substring(0, len), 10);
+        const subV = parseInt(strC.substring(len), 10);
+        if (subC >= 1 && subC <= maxChap && subV >= 1) {
+          matchedChapter = subC;
+          targetVerse = subV;
+          foundSplit = true;
+          notice = `${matchedBook} has ${maxChap} chapters. Loaded ${matchedBook} ${subC}:${subV}.`;
+          break;
+        }
+      }
+      if (!foundSplit) {
+        matchedChapter = maxChap;
+        targetVerse = Math.max(1, rawV);
+        notice = `${matchedBook} only has ${maxChap} chapter${maxChap > 1 ? 's' : ''}. Loaded ${matchedBook} ${maxChap}:${targetVerse}.`;
+      }
+    } else if (rawC > maxChap) {
+      matchedChapter = maxChap;
+      targetVerse = Math.max(1, rawV);
+      notice = `${matchedBook} only has ${maxChap} chapter${maxChap > 1 ? 's' : ''}. Loaded ${matchedBook} ${maxChap}:${targetVerse}.`;
+    } else {
+      matchedChapter = Math.max(1, rawC);
+      targetVerse = Math.max(1, rawV);
+    }
   }
 
   // Keyword overrides when no numbers are present
-  if (!numbersInQuery.length && !bookQueryPart) {
+  if (!referenceNumbers.length && !bookQueryPart) {
     if (lowerQ.includes("love")) {
       matchedBook = "John"; matchedChapter = 3; targetVerse = 16;
     } else if (lowerQ.includes("shepherd") || lowerQ.includes("valley")) {
@@ -446,6 +512,7 @@ export function searchLocalBible(query: string, version: string = 'NIV'): LocalB
 
   // Determine total verse count for this chapter (ensuring 100% contiguous verses)
   const maxVerseCount = CHAPTER_VERSE_COUNTS[datasetKey] || Math.max(25, targetVerse + 5);
+  targetVerse = Math.min(targetVerse, maxVerseCount);
 
   const chapterVerses: LocalBibleVerse[] = [];
 
@@ -490,6 +557,271 @@ export function searchLocalBible(query: string, version: string = 'NIV'): LocalB
     chapter: matchedChapter,
     targetVerse,
     translation: vKey,
-    chapterVerses
+    chapterVerses,
+    notice
+  };
+}
+
+// Curated index of key scripture verses across the Bible
+export const KEY_BIBLE_VERSES: LocalBibleVerseMatch[] = [
+  { reference: "Genesis 1:1", book: "Genesis", chapter: 1, verseNumber: 1, translation: "NIV", text: "In the beginning God created the heavens and the earth." },
+  { reference: "Genesis 1:3", book: "Genesis", chapter: 1, verseNumber: 3, translation: "NIV", text: "And God said, 'Let there be light,' and there was light." },
+  { reference: "Genesis 1:27", book: "Genesis", chapter: 1, verseNumber: 27, translation: "NIV", text: "So God created human beings in his own image, in the image of God he created them; male and female he created them." },
+  { reference: "Exodus 14:14", book: "Exodus", chapter: 14, verseNumber: 14, translation: "NIV", text: "The LORD will fight for you; you need only to be still." },
+  { reference: "Exodus 20:3", book: "Exodus", chapter: 20, verseNumber: 3, translation: "NIV", text: "You shall have no other gods before me." },
+  { reference: "Numbers 6:24-26", book: "Numbers", chapter: 6, verseNumber: 24, translation: "NIV", text: "The LORD bless you and keep you; the LORD make his face shine on you and be gracious to you; the LORD turn his face toward you and give you peace." },
+  { reference: "Deuteronomy 6:4-5", book: "Deuteronomy", chapter: 6, verseNumber: 4, translation: "NIV", text: "Hear, O Israel: The LORD our God, the LORD is one. Love the LORD your God with all your heart and with all your soul and with all your strength." },
+  { reference: "Joshua 1:9", book: "Joshua", chapter: 1, verseNumber: 9, translation: "NIV", text: "Have I not commanded you? Be strong and courageous. Do not be afraid; do not be discouraged, for the LORD your God will be with you wherever you go." },
+  { reference: "Joshua 24:15", book: "Joshua", chapter: 24, verseNumber: 15, translation: "NIV", text: "But as for me and my household, we will serve the LORD." },
+  { reference: "2 Chronicles 7:14", book: "2 Chronicles", chapter: 7, verseNumber: 14, translation: "NIV", text: "If my people, who are called by my name, will humble themselves and pray and seek my face and turn from their wicked ways, then I will hear from heaven, and I will forgive their sin and will heal their land." },
+  { reference: "Psalm 1:1-2", book: "Psalms", chapter: 1, verseNumber: 1, translation: "NIV", text: "Blessed is the one who does not walk in step with the wicked or stand in the way that sinners take or sit in the company of mockers, but whose delight is in the law of the LORD." },
+  { reference: "Psalm 23:1", book: "Psalms", chapter: 23, verseNumber: 1, translation: "NIV", text: "The LORD is my shepherd, I lack nothing." },
+  { reference: "Psalm 23:4", book: "Psalms", chapter: 23, verseNumber: 4, translation: "NIV", text: "Even though I walk through the darkest valley, I will fear no evil, for you are with me; your rod and your staff, they comfort me." },
+  { reference: "Psalm 23:6", book: "Psalms", chapter: 23, verseNumber: 6, translation: "NIV", text: "Surely your goodness and love will follow me all the days of my life, and I will dwell in the house of the LORD forever." },
+  { reference: "Psalm 34:8", book: "Psalms", chapter: 34, verseNumber: 8, translation: "NIV", text: "Taste and see that the LORD is good; blessed is the one who takes refuge in him." },
+  { reference: "Psalm 37:4", book: "Psalms", chapter: 37, verseNumber: 4, translation: "NIV", text: "Take delight in the LORD, and he will give you the desires of your heart." },
+  { reference: "Psalm 46:1", book: "Psalms", chapter: 46, verseNumber: 1, translation: "NIV", text: "God is our refuge and strength, an ever-present help in trouble." },
+  { reference: "Psalm 46:10", book: "Psalms", chapter: 46, verseNumber: 10, translation: "NIV", text: "He says, 'Be still, and know that I am God; I will be exalted among the nations, I will be exalted in the earth.'" },
+  { reference: "Psalm 51:10", book: "Psalms", chapter: 51, verseNumber: 10, translation: "NIV", text: "Create in me a pure heart, O God, and renew a steadfast spirit within me." },
+  { reference: "Psalm 91:1-2", book: "Psalms", chapter: 91, verseNumber: 1, translation: "NIV", text: "Whoever dwells in the shelter of the Most High will rest in the shadow of the Almighty. I will say of the LORD, 'He is my refuge and my fortress, my God, in whom I trust.'" },
+  { reference: "Psalm 119:105", book: "Psalms", chapter: 119, verseNumber: 105, translation: "NIV", text: "Your word is a lamp for my feet, a light on my path." },
+  { reference: "Psalm 121:1-2", book: "Psalms", chapter: 121, verseNumber: 1, translation: "NIV", text: "I lift up my eyes to the mountains—where does my help come from? My help comes from the LORD, the Maker of heaven and earth." },
+  { reference: "Psalm 139:14", book: "Psalms", chapter: 139, verseNumber: 14, translation: "NIV", text: "I praise you because I am fearfully and wonderfully made; your works are wonderful, I know that full well." },
+  { reference: "Psalm 147:3", book: "Psalms", chapter: 147, verseNumber: 3, translation: "NIV", text: "He heals the brokenhearted and binds up their wounds." },
+  { reference: "Proverbs 3:5-6", book: "Proverbs", chapter: 3, verseNumber: 5, translation: "NIV", text: "Trust in the LORD with all your heart and lean not on your own understanding; in all your ways submit to him, and he will make your paths straight." },
+  { reference: "Proverbs 4:23", book: "Proverbs", chapter: 4, verseNumber: 23, translation: "NIV", text: "Above all else, guard your heart, for everything you do flows from it." },
+  { reference: "Proverbs 18:10", book: "Proverbs", chapter: 18, verseNumber: 10, translation: "NIV", text: "The name of the LORD is a fortified tower; the righteous run to it and are safe." },
+  { reference: "Proverbs 27:17", book: "Proverbs", chapter: 27, verseNumber: 17, translation: "NIV", text: "As iron sharpens iron, so one person sharpens another." },
+  { reference: "Isaiah 9:6", book: "Isaiah", chapter: 9, verseNumber: 6, translation: "NIV", text: "For to us a child is born, to us a son is given, and the government will be on his shoulders. And he will be called Wonderful Counselor, Mighty God, Everlasting Father, Prince of Peace." },
+  { reference: "Isaiah 40:31", book: "Isaiah", chapter: 40, verseNumber: 31, translation: "NIV", text: "But those who hope in the LORD will renew their strength. They will soar on wings like eagles; they will run and not grow weary, they will walk and not be faint." },
+  { reference: "Isaiah 41:10", book: "Isaiah", chapter: 41, verseNumber: 10, translation: "NIV", text: "So do not fear, for I am with you; do not be dismayed, for I am your God. I will strengthen you and help you; I will uphold you with my righteous right hand." },
+  { reference: "Isaiah 53:5", book: "Isaiah", chapter: 53, verseNumber: 5, translation: "NIV", text: "But he was pierced for our transgressions, he was crushed for our iniquities; the punishment that brought us peace was on him, and by his wounds we are healed." },
+  { reference: "Isaiah 54:17", book: "Isaiah", chapter: 54, verseNumber: 17, translation: "NIV", text: "'No weapon forged against you will prevail, and you will refute every tongue that accuses you. This is the heritage of the servants of the LORD.'" },
+  { reference: "Jeremiah 29:11", book: "Jeremiah", chapter: 29, verseNumber: 11, translation: "NIV", text: "'For I know the plans I have for you,' declares the LORD, 'plans to prosper you and not to harm you, plans to give you hope and a future.'" },
+  { reference: "Lamentations 3:22-23", book: "Lamentations", chapter: 3, verseNumber: 22, translation: "NIV", text: "Because of the LORD's great love we are not consumed, for his compassions never fail. They are new every morning; great is your faithfulness." },
+  { reference: "Micah 6:8", book: "Micah", chapter: 6, verseNumber: 8, translation: "NIV", text: "He has shown you, O mortal, what is good. And what does the LORD require of you? To act justly and to love mercy and to walk humbly with your God." },
+  { reference: "Matthew 5:3", book: "Matthew", chapter: 5, verseNumber: 3, translation: "NIV", text: "Blessed are the poor in spirit, for theirs is the kingdom of heaven." },
+  { reference: "Matthew 5:14", book: "Matthew", chapter: 5, verseNumber: 14, translation: "NIV", text: "You are the light of the world. A town built on a hill cannot be hidden." },
+  { reference: "Matthew 6:33", book: "Matthew", chapter: 6, verseNumber: 33, translation: "NIV", text: "But seek first his kingdom and his righteousness, and all these things will be given to you as well." },
+  { reference: "Matthew 7:7", book: "Matthew", chapter: 7, verseNumber: 7, translation: "NIV", text: "Ask and it will be given to you; seek and you will find; knock and the door will be opened to you." },
+  { reference: "Matthew 11:28", book: "Matthew", chapter: 11, verseNumber: 28, translation: "NIV", text: "Come to me, all you who are weary and burdened, and I will give you rest." },
+  { reference: "Matthew 28:19", book: "Matthew", chapter: 28, verseNumber: 19, translation: "NIV", text: "Therefore go and make disciples of all nations, baptizing them in the name of the Father and of the Son and of the Holy Spirit." },
+  { reference: "Mark 12:30-31", book: "Mark", chapter: 12, verseNumber: 30, translation: "NIV", text: "Love the Lord your God with all your heart and with all your soul and with all your mind and with all your strength. The second is this: 'Love your neighbor as yourself.'" },
+  { reference: "Luke 1:37", book: "Luke", chapter: 1, verseNumber: 37, translation: "NIV", text: "For no word from God will ever fail." },
+  { reference: "Luke 6:31", book: "Luke", chapter: 6, verseNumber: 31, translation: "NIV", text: "Do to others as you would have them do to you." },
+  { reference: "John 1:1", book: "John", chapter: 1, verseNumber: 1, translation: "NIV", text: "In the beginning was the Word, and the Word was with God, and the Word was God." },
+  { reference: "John 1:14", book: "John", chapter: 1, verseNumber: 14, translation: "NIV", text: "The Word became flesh and made his dwelling among us. We have seen his glory, the glory of the one and only Son, who came from the Father, full of grace and truth." },
+  { reference: "John 3:16", book: "John", chapter: 3, verseNumber: 16, translation: "NIV", text: "For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life." },
+  { reference: "John 3:17", book: "John", chapter: 3, verseNumber: 17, translation: "NIV", text: "For God did not send his Son into the world to condemn the world, but to save the world through him." },
+  { reference: "John 8:12", book: "John", chapter: 8, verseNumber: 12, translation: "NIV", text: "Jesus spoke to the people, 'I am the light of the world. Whoever follows me will never walk in darkness, but will have the light of life.'" },
+  { reference: "John 10:10", book: "John", chapter: 10, verseNumber: 10, translation: "NIV", text: "The thief comes only to steal and kill and destroy; I have come that they may have life, and have it to the full." },
+  { reference: "John 11:25", book: "John", chapter: 11, verseNumber: 25, translation: "NIV", text: "Jesus said to her, 'I am the resurrection and the life. The one who believes in me will live, even though they die.'" },
+  { reference: "John 13:34", book: "John", chapter: 13, verseNumber: 34, translation: "NIV", text: "A new command I give you: Love one another. As I have loved you, so you must love one another." },
+  { reference: "John 14:6", book: "John", chapter: 14, verseNumber: 6, translation: "NIV", text: "Jesus answered, 'I am the way and the truth and the life. No one comes to the Father except through me.'" },
+  { reference: "John 14:27", book: "John", chapter: 14, verseNumber: 27, translation: "NIV", text: "Peace I leave with you; my peace I give you. I do not give to you as the world gives. Do not let your hearts be troubled and do not be afraid." },
+  { reference: "John 15:5", book: "John", chapter: 15, verseNumber: 5, translation: "NIV", text: "I am the vine; you are the branches. If you remain in me and I in you, you will bear much fruit; apart from me you can do nothing." },
+  { reference: "Romans 3:23", book: "Romans", chapter: 3, verseNumber: 23, translation: "NIV", text: "For all have sinned and fall short of the glory of God." },
+  { reference: "Romans 5:8", book: "Romans", chapter: 5, verseNumber: 8, translation: "NIV", text: "But God demonstrates his own love for us in this: While we were still sinners, Christ died for us." },
+  { reference: "Romans 6:23", book: "Romans", chapter: 6, verseNumber: 23, translation: "NIV", text: "For the wages of sin is death, but the gift of God is eternal life in Christ Jesus our Lord." },
+  { reference: "Romans 8:28", book: "Romans", chapter: 8, verseNumber: 28, translation: "NIV", text: "And we know that in all things God works for the good of those who love him, who have been called according to his purpose." },
+  { reference: "Romans 8:31", book: "Romans", chapter: 8, verseNumber: 31, translation: "NIV", text: "What, then, shall we say in response to these things? If God is for us, who can be against us?" },
+  { reference: "Romans 8:38-39", book: "Romans", chapter: 8, verseNumber: 38, translation: "NIV", text: "For I am convinced that neither death nor life, neither angels nor demons, neither the present nor the future, nor any powers, neither height nor depth, nor anything else in all creation, will be able to separate us from the love of God that is in Christ Jesus our Lord." },
+  { reference: "Romans 12:2", book: "Romans", chapter: 12, verseNumber: 2, translation: "NIV", text: "Do not conform to the pattern of this world, but be transformed by the renewing of your mind. Then you will be able to test and approve what God's will is—his good, pleasing and perfect will." },
+  { reference: "1 Corinthians 10:13", book: "1 Corinthians", chapter: 10, verseNumber: 13, translation: "NIV", text: "No temptation has overtaken you except what is common to mankind. And God is faithful; he will not let you be tempted beyond what you can bear." },
+  { reference: "1 Corinthians 13:4", book: "1 Corinthians", chapter: 13, verseNumber: 4, translation: "NIV", text: "Love is patient, love is kind. It does not envy, it does not boast, it is not proud." },
+  { reference: "1 Corinthians 13:13", book: "1 Corinthians", chapter: 13, verseNumber: 13, translation: "NIV", text: "And now these three remain: faith, hope and love. But the greatest of these is love." },
+  { reference: "2 Corinthians 5:17", book: "2 Corinthians", chapter: 5, verseNumber: 17, translation: "NIV", text: "Therefore, if anyone is in Christ, the new creation has come: The old has gone, the new is here!" },
+  { reference: "2 Corinthians 12:9", book: "2 Corinthians", chapter: 12, verseNumber: 9, translation: "NIV", text: "But he said to me, 'My grace is sufficient for you, for my power is made perfect in weakness.' Therefore I will boast all the more gladly about my weaknesses, so that Christ's power may rest on me." },
+  { reference: "Galatians 2:20", book: "Galatians", chapter: 2, verseNumber: 20, translation: "NIV", text: "I have been crucified with Christ and I no longer live, but Christ lives in me. The life I now live in the body, I live by faith in the Son of God, who loved me and gave himself for me." },
+  { reference: "Galatians 5:22-23", book: "Galatians", chapter: 5, verseNumber: 22, translation: "NIV", text: "But the fruit of the Spirit is love, joy, peace, forbearance, kindness, goodness, faithfulness, gentleness and self-control. Against such things there is no law." },
+  { reference: "Ephesians 2:8-9", book: "Ephesians", chapter: 2, verseNumber: 8, translation: "NIV", text: "For it is by grace you have been saved, through faith—and this is not from yourselves, it is the gift of God—not by works, so that no one can boast." },
+  { reference: "Ephesians 6:11", book: "Ephesians", chapter: 6, verseNumber: 11, translation: "NIV", text: "Put on the full armor of God, so that you can take your stand against the devil's schemes." },
+  { reference: "Philippians 4:6-7", book: "Philippians", chapter: 4, verseNumber: 6, translation: "NIV", text: "Do not be anxious about anything, but in every situation, by prayer and petition, with thanksgiving, present your requests to God. And the peace of God, which transcends all understanding, will guard your hearts and your minds in Christ Jesus." },
+  { reference: "Philippians 4:13", book: "Philippians", chapter: 4, verseNumber: 13, translation: "NIV", text: "I can do all this through him who gives me strength." },
+  { reference: "Philippians 4:19", book: "Philippians", chapter: 4, verseNumber: 19, translation: "NIV", text: "And my God will meet all your needs according to the riches of his glory in Christ Jesus." },
+  { reference: "Colossians 3:12", book: "Colossians", chapter: 3, verseNumber: 12, translation: "NIV", text: "Therefore, as God's chosen people, holy and dearly loved, clothe yourselves with compassion, kindness, humility, gentleness and patience." },
+  { reference: "1 Thessalonians 5:16-18", book: "1 Thessalonians", chapter: 5, verseNumber: 16, translation: "NIV", text: "Rejoice always, pray continually, give thanks in all circumstances; for this is God's will for you in Christ Jesus." },
+  { reference: "2 Timothy 1:7", book: "2 Timothy", chapter: 1, verseNumber: 7, translation: "NIV", text: "For the Spirit God gave us does not make us timid, but gives us power, love and self-discipline." },
+  { reference: "2 Timothy 3:16", book: "2 Timothy", chapter: 3, verseNumber: 16, translation: "NIV", text: "All Scripture is God-breathed and is useful for teaching, rebuking, correcting and training in righteousness." },
+  { reference: "Hebrews 11:1", book: "Hebrews", chapter: 11, verseNumber: 1, translation: "NIV", text: "Now faith is confidence in what we hope for and assurance about what we do not see." },
+  { reference: "Hebrews 12:1-2", book: "Hebrews", chapter: 12, verseNumber: 1, translation: "NIV", text: "Therefore, since we are surrounded by such a great cloud of witnesses, let us throw off everything that hinders and the sin that so easily entangles. And let us run with perseverance the race marked out for us, fixing our eyes on Jesus, the pioneer and perfecter of faith." },
+  { reference: "Hebrews 13:8", book: "Hebrews", chapter: 13, verseNumber: 8, translation: "NIV", text: "Jesus Christ is the same yesterday and today and forever." },
+  { reference: "James 1:22", book: "James", chapter: 1, verseNumber: 22, translation: "NIV", text: "Do not merely listen to the word, and so deceive yourselves. Do what it says." },
+  { reference: "1 Peter 5:7", book: "1 Peter", chapter: 5, verseNumber: 7, translation: "NIV", text: "Cast all your anxiety on him because he cares for you." },
+  { reference: "1 John 1:9", book: "1 John", chapter: 1, verseNumber: 9, translation: "NIV", text: "If we confess our sins, he is faithful and just and will forgive us our sins and purify us from all unrighteousness." },
+  { reference: "1 John 4:8", book: "1 John", chapter: 4, verseNumber: 8, translation: "NIV", text: "Whoever does not love does not know God, because God is love." },
+  { reference: "1 John 4:19", book: "1 John", chapter: 4, verseNumber: 19, translation: "NIV", text: "We love because he first loved us." },
+  { reference: "Revelation 3:20", book: "Revelation", chapter: 3, verseNumber: 20, translation: "NIV", text: "Here I am! I stand at the door and knock. If anyone hears my voice and opens the door, I will come in and eat with that person, and they with me." },
+  { reference: "Revelation 21:4", book: "Revelation", chapter: 21, verseNumber: 4, translation: "NIV", text: "'He will wipe every tear from their eyes. There will be no more death or mourning or crying or pain, for the old order of things has passed away.'" }
+];
+
+/**
+ * Checks if a search query is meant as a chapter/verse Reference (e.g. "John 3 16", "Genesis 1", "Ps 23")
+ * or a Content/Phrase query (e.g. "in the beginning", "for god so loved", "the lord is my shepherd").
+ */
+export function isReferenceQuery(query: string): boolean {
+  const trimmed = (query || "").trim();
+  if (!trimmed) return true;
+
+  // Extract non-numeric prefix
+  const bookQueryPart = trimmed.replace(/[:\d,]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!bookQueryPart) {
+    return true; // Digits only e.g. "3:16"
+  }
+
+  // Check direct alias mapping
+  if (BOOK_ALIASES[bookQueryPart]) {
+    return true;
+  }
+
+  // Check if bookQueryPart equals a full book name
+  const exactMatch = ALL_BIBLE_BOOKS.find(b => b.toLowerCase() === bookQueryPart);
+  if (exactMatch) return true;
+
+  const words = bookQueryPart.split(/\s+/);
+  if (words.length > 2 && bookQueryPart !== "song of solomon") {
+    return false; // Multi-word text queries like "in the beginning" or "for god so loved"
+  }
+
+  // Check if any book name in ALL_BIBLE_BOOKS starts with bookQueryPart
+  const startsWithMatch = ALL_BIBLE_BOOKS.find(b => b.toLowerCase().startsWith(bookQueryPart));
+  if (startsWithMatch) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Fast full-text search across all Bible verses in database & custom uploaded translations.
+ */
+export function searchBibleContent(query: string, version: string = 'NIV'): LocalBibleVerseMatch[] {
+  const rawQ = query.trim().toLowerCase();
+  if (!rawQ) return [];
+
+  const words = rawQ.split(/\s+/).filter(w => w.length > 0);
+  const vKey = version.toUpperCase();
+  const results: { match: LocalBibleVerseMatch; score: number }[] = [];
+  const seenRefs = new Set<string>();
+
+  const scoreVerse = (ref: string, book: string, ch: number, vNum: number, text: string, trans: string) => {
+    if (seenRefs.has(ref)) return;
+    const lowerText = text.toLowerCase();
+
+    let score = 0;
+    if (lowerText.includes(rawQ)) {
+      score += 100;
+    } else {
+      let wordCount = 0;
+      for (const w of words) {
+        if (lowerText.includes(w)) {
+          wordCount++;
+        }
+      }
+      if (wordCount === words.length) {
+        score += 60;
+      } else if (wordCount >= Math.max(1, Math.ceil(words.length * 0.6))) {
+        score += 30 + wordCount * 5;
+      }
+    }
+
+    if (score > 0) {
+      seenRefs.add(ref);
+      results.push({
+        match: {
+          reference: ref,
+          book,
+          chapter: ch,
+          verseNumber: vNum,
+          text,
+          translation: trans
+        },
+        score
+      });
+    }
+  };
+
+  // 1. Search in KEY_BIBLE_VERSES
+  for (const kv of KEY_BIBLE_VERSES) {
+    scoreVerse(kv.reference, kv.book, kv.chapter, kv.verseNumber, kv.text, kv.translation || vKey);
+  }
+
+  // 2. Search in SCRIPTURE_DATASET
+  for (const [key, chapData] of Object.entries(SCRIPTURE_DATASET)) {
+    const [b, cStr] = key.split(':');
+    const ch = parseInt(cStr, 10) || 1;
+    for (const [vStr, tMap] of Object.entries(chapData)) {
+      const vNum = parseInt(vStr, 10) || 1;
+      const text = tMap[vKey] || tMap['NIV'] || Object.values(tMap)[0];
+      if (text) {
+        scoreVerse(`${b} ${ch}:${vNum}`, b, ch, vNum, text, vKey);
+      }
+    }
+  }
+
+  // 3. Search in Custom Uploaded Bible Versions
+  const customVersions = getCustomBibleVersions();
+  const matchedCustom = customVersions.find(cv => cv.id.toUpperCase() === vKey);
+  if (matchedCustom) {
+    for (const [refKey, textVal] of Object.entries(matchedCustom.verses)) {
+      if (typeof textVal === 'string' && textVal.trim()) {
+        const lineMatch = refKey.match(/^((?:\d\s+)?[a-zA-Z\s]+)\s+(\d+)[:\s]+(\d+)$/);
+        if (lineMatch) {
+          const b = lineMatch[1].trim();
+          const ch = parseInt(lineMatch[2], 10) || 1;
+          const vNum = parseInt(lineMatch[3], 10) || 1;
+          scoreVerse(`${b} ${ch}:${vNum}`, b, ch, vNum, textVal, matchedCustom.id);
+        } else {
+          scoreVerse(refKey, "Custom", 1, 1, textVal, matchedCustom.id);
+        }
+      }
+    }
+  }
+
+  results.sort((a, b) => b.score - a.score);
+  return results.slice(0, 30).map(r => r.match);
+}
+
+/**
+ * Smart Bible Search dispatcher.
+ * Automatically chooses between Reference Search (e.g. "John 3:16") and Phrase Content Search (e.g. "in the beginning").
+ */
+export function searchBibleSmart(query: string, version: string = 'NIV'): SmartBibleSearchResult {
+  const rawQ = (query || "").trim();
+  if (!rawQ) {
+    const defaultRes = searchLocalBible("John 3:16", version);
+    return {
+      searchType: 'reference',
+      query: "John 3:16",
+      chapterResult: defaultRes
+    };
+  }
+
+  if (isReferenceQuery(rawQ)) {
+    const chapterRes = searchLocalBible(rawQ, version);
+    return {
+      searchType: 'reference',
+      query: rawQ,
+      chapterResult: chapterRes,
+      notice: chapterRes.notice
+    };
+  }
+
+  const contentMatches = searchBibleContent(rawQ, version);
+  if (contentMatches.length === 0) {
+    // Fallback to reference search if no content matches found
+    const fallbackRes = searchLocalBible(rawQ, version);
+    return {
+      searchType: 'reference',
+      query: rawQ,
+      chapterResult: fallbackRes,
+      notice: `No verse matches found for phrase "${rawQ}". Showing reference search result for ${fallbackRes.book} ${fallbackRes.chapter}.`
+    };
+  }
+
+  return {
+    searchType: 'content',
+    query: rawQ,
+    contentMatches
   };
 }

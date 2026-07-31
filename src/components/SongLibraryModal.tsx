@@ -358,6 +358,7 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
                   type="text"
                   value={searchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
+                  onFocus={(e) => e.target.select()}
                   placeholder="Type song title or artist (e.g. 'Way Maker', 'Goodness of God', 'Gratitude')..."
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 shadow-inner font-medium"
                 />
