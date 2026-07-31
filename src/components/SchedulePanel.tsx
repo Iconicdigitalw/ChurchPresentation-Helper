@@ -258,9 +258,9 @@ export const SchedulePanel: React.FC<SchedulePanelProps> = ({
                     : isBeingDraggedOver
                     ? 'border-indigo-400 bg-indigo-950/80 ring-2 ring-indigo-500 shadow-xl'
                     : hasLiveSlide
-                    ? 'border-l-4 border-l-rose-500 bg-rose-950/20 border-rose-900/60 text-white shadow-md shadow-rose-950/30'
+                    ? 'border-l-4 border-l-rose-500 bg-rose-950/20 border-rose-900/60 text-slate-100 shadow-md shadow-rose-950/30'
                     : isSelected
-                    ? 'border-l-4 border-l-amber-500 bg-slate-800/90 border-slate-700 text-white shadow-md'
+                    ? 'border-l-4 border-l-amber-500 bg-slate-800/90 border-slate-700 text-slate-100 shadow-md'
                     : 'border-l-4 border-l-transparent bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-800/80 text-slate-300'
                 }`}
               >

@@ -650,7 +650,7 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-white">Live Bible Passage & Verse Lookup</h2>
+                <h2 className="text-base font-bold text-slate-100">Live Bible Passage & Verse Lookup</h2>
                 <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-extrabold px-2 py-0.5 rounded-md border border-emerald-500/30 flex items-center gap-1">
                   <Zap className="w-3 h-3 text-emerald-400 fill-emerald-400" />
                   <span>Instant Local Database (0ms)</span>
@@ -661,7 +661,7 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
           </div>
           <button 
             onClick={onClose} 
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -680,7 +680,7 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
                 onFocus={(e) => e.target.select()}
                 onKeyDown={handleKeyDown}
                 placeholder="Type or speak book, chapter, verse (e.g. John 3 16, Psalm 23, Romans 8:28)..."
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-24 py-2 text-xs font-semibold text-white focus:outline-none focus:border-blue-500 shadow-inner"
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-24 py-2 text-xs font-semibold text-slate-100 focus:outline-none focus:border-blue-500 shadow-inner"
               />
 
               {/* Voice Microphone Toggle & Shortcut Selector Badge inside input */}
@@ -692,7 +692,7 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
                   className={`p-1.5 rounded-lg flex items-center gap-1 text-xs font-bold transition-all cursor-pointer ${
                     isListening 
                       ? 'bg-rose-600 text-white animate-pulse shadow-lg shadow-rose-900/50' 
-                      : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
+                      : 'bg-slate-800 text-slate-300 hover:text-slate-100 hover:bg-slate-700'
                   }`}
                 >
                   {isListening ? <Mic className="w-3.5 h-3.5 animate-bounce" /> : <MicOff className="w-3.5 h-3.5 text-slate-400" />}
@@ -720,11 +720,11 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
                   {showShortcutSettings && (
                     <div className="absolute right-0 top-8 z-50 w-52 bg-slate-900 border border-slate-800 rounded-xl p-2.5 shadow-2xl text-xs space-y-1.5">
                       <div className="flex items-center justify-between pb-1 border-b border-slate-800">
-                        <span className="font-bold text-white text-[11px] flex items-center gap-1">
+                        <span className="font-bold text-slate-100 text-[11px] flex items-center gap-1">
                           <Settings className="w-3 h-3 text-amber-400" />
                           <span>Voice Shortcut</span>
                         </span>
-                        <button onClick={() => setShowShortcutSettings(false)} className="text-slate-400 hover:text-white">
+                        <button onClick={() => setShowShortcutSettings(false)} className="text-slate-400 hover:text-slate-100">
                           <X className="w-3 h-3" />
                         </button>
                       </div>
@@ -750,7 +750,7 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
                             }`}
                           >
                             <span>{s.label}</span>
-                            {shortcutMode === s.id && <Check className="w-3 h-3 text-white" />}
+                            {shortcutMode === s.id && <Check className="w-3 h-3 text-slate-100" />}
                           </button>
                         ))}
                       </div>
@@ -832,7 +832,7 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
                 </span>
-                <span className="font-bold text-white">Listening...</span>
+                <span className="font-bold text-slate-100">Listening...</span>
                 <span className="text-slate-300 italic text-[11px]">
                   {voiceTranscript ? `"${voiceTranscript}"` : 'Speak passage or verse e.g., "John chapter 3 verse 16"'}
                 </span>
@@ -1044,13 +1044,13 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
                   <Upload className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white">Upload Custom Bible Translation</h3>
+                  <h3 className="text-sm font-bold text-slate-100">Upload Custom Bible Translation</h3>
                   <p className="text-[11px] text-slate-400">Import custom JSON, TXT, or CSV Bible files</p>
                 </div>
               </div>
               <button 
                 onClick={() => setShowUploadModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1079,7 +1079,7 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
                     onChange={(e) => setUploadCode(e.target.value.toUpperCase())}
                     placeholder="NASB"
                     maxLength={10}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-white font-mono font-bold focus:outline-none focus:border-amber-500"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-slate-100 font-mono font-bold focus:outline-none focus:border-amber-500"
                   />
                 </div>
                 <div>
@@ -1091,7 +1091,7 @@ export const BibleLibraryModal: React.FC<BibleLibraryModalProps> = ({
                     value={uploadName}
                     onChange={(e) => setUploadName(e.target.value)}
                     placeholder="New American Standard Bible"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-white font-semibold focus:outline-none focus:border-amber-500"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-slate-100 font-semibold focus:outline-none focus:border-amber-500"
                   />
                 </div>
               </div>

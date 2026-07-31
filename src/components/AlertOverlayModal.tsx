@@ -46,9 +46,9 @@ export const AlertOverlayModal: React.FC<AlertOverlayModalProps> = ({
         <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-5 h-5 text-amber-400" />
-            <h3 className="text-sm font-bold text-white">Send Screen Alert Overlay</h3>
+            <h3 className="text-sm font-bold text-slate-100">Send Screen Alert Overlay</h3>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-white">
+          <button onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-slate-100">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -114,7 +114,7 @@ export const AlertOverlayModal: React.FC<AlertOverlayModalProps> = ({
               value={alertMessage}
               onChange={(e) => setAlertMessage(e.target.value)}
               placeholder="e.g. Nursery #402 or Vehicle Lights On"
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none focus:border-amber-500"
             />
           </div>
 

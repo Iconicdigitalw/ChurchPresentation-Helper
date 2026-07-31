@@ -101,16 +101,21 @@ export function saveUserProfileSettings(profile: UserProfileSettings) {
 // ===============================================
 // 2. GLOBAL APP SETTINGS (Slide Activation, etc.)
 // ===============================================
+export type UiTheme = 'dark' | 'light';
+
 export interface AppSettings {
   slideActivationMode: 'double_click' | 'single_click';
   autoLiveSearchOnlineSongs: boolean;
   stageDisplayFontSize: 'normal' | 'large' | 'xlarge';
+  uiTheme: UiTheme;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   slideActivationMode: 'double_click',
   autoLiveSearchOnlineSongs: true,
-  stageDisplayFontSize: 'large'
+  stageDisplayFontSize: 'large',
+  // Dark by default: operators usually run this from a dim media booth.
+  uiTheme: 'dark'
 };
 
 const APP_SETTINGS_KEY = 'LOGOS_APP_SETTINGS_V1';
@@ -130,6 +135,24 @@ export function saveAppSettings(settings: AppSettings) {
   } catch (e) {
     console.error('Failed to save app settings:', e);
   }
+}
+
+export function getUiTheme(): UiTheme {
+  return getAppSettings().uiTheme === 'light' ? 'light' : 'dark';
+}
+
+export function saveUiTheme(uiTheme: UiTheme) {
+  saveAppSettings({ ...getAppSettings(), uiTheme });
+}
+
+/**
+ * Light mode works by remapping Tailwind's colour variables (see index.css), so
+ * the only thing to toggle is a class on <html>.
+ */
+export function applyUiTheme(uiTheme: UiTheme) {
+  const root = document.documentElement;
+  root.classList.toggle('light', uiTheme === 'light');
+  root.style.colorScheme = uiTheme;
 }
 
 // ===============================================

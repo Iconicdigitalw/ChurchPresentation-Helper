@@ -9,9 +9,15 @@ import {
   Presentation, 
   BookOpen, 
   AlertCircle,
+  AlertTriangle,
   HelpCircle
 } from 'lucide-react';
 import { ScheduleItem, Slide, ThemeStyle } from '../types';
+import {
+  FALLBACK_CONTENT_WARNING,
+  describeRequestFailure,
+  readApiErrorMessage
+} from '../utils/apiErrors';
 
 interface AISermonConverterModalProps {
   isOpen: boolean;
@@ -29,6 +35,8 @@ export const AISermonConverterModal: React.FC<AISermonConverterModalProps> = ({
   const [targetSlideCount, setTargetSlideCount] = useState('auto (around 8-12 slides)');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // True when the deck below is canned sample content rather than a real AI conversion
+  const [isFallbackResult, setIsFallbackResult] = useState(false);
   const [previewData, setPreviewData] = useState<{
     title: string;
     subtitle?: string;
@@ -60,6 +68,7 @@ export const AISermonConverterModal: React.FC<AISermonConverterModalProps> = ({
 
     setIsLoading(true);
     setErrorMessage(null);
+    setIsFallbackResult(false);
 
     try {
       const res = await fetch('/api/gemini/convert-sermon', {
@@ -73,8 +82,7 @@ export const AISermonConverterModal: React.FC<AISermonConverterModalProps> = ({
       });
 
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to convert sermon notes.');
+        throw new Error(await readApiErrorMessage(res, 'Failed to convert sermon notes.'));
       }
 
       const data = await res.json();
@@ -89,18 +97,31 @@ export const AISermonConverterModal: React.FC<AISermonConverterModalProps> = ({
         speakerNotes: s.speakerNotes || ''
       }));
 
+      if (generatedSlides.length === 0) {
+        throw new Error('The AI returned no slides. Please try again with more sermon detail.');
+      }
+
       setPreviewData({
         title: data.title || 'Sermon Presentation',
         subtitle: data.subtitle || data.mainScripture || 'Preaching Deck',
         speaker: data.speaker || '',
         slides: generatedSlides
       });
-    } catch (err: any) {
-      console.error('Sermon conversion error:', err);
-      setErrorMessage(err.message || 'Error converting sermon document. Check Gemini API key.');
+      // Server marks placeholder decks when Gemini is unavailable or errored
+      setIsFallbackResult(!!data.isFallback);
+    } catch (err) {
+      setPreviewData(null);
+      setErrorMessage(
+        describeRequestFailure(err, 'Error converting sermon document. Check Gemini API key.')
+      );
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleResetPreview = () => {
+    setPreviewData(null);
+    setIsFallbackResult(false);
   };
 
   const handleConfirmInsert = () => {
@@ -158,7 +179,7 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
               <Sparkles className="w-5 h-5 text-amber-400 animate-pulse" />
             </div>
             <div>
-              <h2 className="text-base font-extrabold text-white tracking-tight">AI Document to Presentation Deck</h2>
+              <h2 className="text-base font-extrabold text-slate-100 tracking-tight">AI Document to Presentation Deck</h2>
               <p className="text-xs text-slate-400">
                 Turn preaching notes, manuscripts, or Word outlines into slides instantly
               </p>
@@ -166,7 +187,7 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -178,6 +199,16 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
             <div className="p-3.5 bg-rose-950/60 border border-rose-800 rounded-2xl text-rose-300 text-xs flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
               <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {isFallbackResult && (
+            <div className="p-3.5 bg-amber-950/60 border border-amber-500/40 rounded-2xl text-amber-200 text-xs flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <span>
+                <span className="font-extrabold">{FALLBACK_CONTENT_WARNING}</span>{' '}
+                The deck below is a generic placeholder outline, not a real conversion of your notes.
+              </span>
             </div>
           )}
 
@@ -202,7 +233,7 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
                   value={sermonText}
                   onChange={(e) => setSermonText(e.target.value)}
                   placeholder="Paste preaching outline, pastor notes, or manuscript here..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs text-white focus:outline-none focus:border-indigo-500 leading-relaxed custom-scrollbar shadow-inner"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs text-slate-100 focus:outline-none focus:border-indigo-500 leading-relaxed custom-scrollbar shadow-inner"
                 />
 
                 <div className="flex items-center justify-between text-xs text-slate-400">
@@ -233,7 +264,7 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
                   <select
                     value={themeStyle}
                     onChange={(e) => setThemeStyle(e.target.value as ThemeStyle)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-medium"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500 font-medium"
                   >
                     <option value="gold-divine">Divine Gold & Dark Amber</option>
                     <option value="nature-serene">Serene Nature Emerald</option>
@@ -251,7 +282,7 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
                   <select
                     value={targetSlideCount}
                     onChange={(e) => setTargetSlideCount(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-medium"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500 font-medium"
                   >
                     <option value="auto (around 8-12 slides)">Auto AI Choice (8-12 slides)</option>
                     <option value="compact (5-7 slides)">Compact Deck (5-7 slides)</option>
@@ -295,13 +326,21 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
             <div className="space-y-4">
               <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl flex items-center justify-between shadow-lg">
                 <div>
-                  <h3 className="text-base font-extrabold text-amber-400">{previewData.title}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-extrabold text-amber-400">{previewData.title}</h3>
+                    {isFallbackResult && (
+                      <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        <span>SAMPLE — NOT A REAL AI RESULT</span>
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-slate-400">
                     {previewData.subtitle} • {previewData.slides.length} slides generated
                   </p>
                 </div>
                 <button
-                  onClick={() => setPreviewData(null)}
+                  onClick={handleResetPreview}
                   className="text-xs font-bold text-amber-400 hover:underline"
                 >
                   ← Re-generate
@@ -320,7 +359,7 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
                         <span>Slide #{idx + 1} ({slide.type})</span>
                         {slide.reference && <span className="text-amber-300">{slide.reference}</span>}
                       </div>
-                      <h4 className="text-xs font-extrabold text-white">{slide.header}</h4>
+                      <h4 className="text-xs font-extrabold text-slate-100">{slide.header}</h4>
                       <p className="text-xs text-slate-300 mt-1 line-clamp-3 leading-relaxed">{slide.body}</p>
                     </div>
                     {slide.speakerNotes && (
@@ -338,12 +377,16 @@ Are you facing a giant of anxiety, financial strain, or fear today? Step forward
         {/* Footer */}
         {previewData && (
           <div className="p-4 border-t border-slate-800 bg-slate-950 flex items-center justify-between">
-            <span className="text-xs text-slate-400 font-medium">
-              Ready to insert into Sunday Worship Schedule
+            <span
+              className={`text-xs font-medium ${isFallbackResult ? 'text-amber-300' : 'text-slate-400'}`}
+            >
+              {isFallbackResult
+                ? 'Sample placeholder deck — review before using in a live service'
+                : 'Ready to insert into Sunday Worship Schedule'}
             </span>
             <div className="flex gap-2">
               <button
-                onClick={() => setPreviewData(null)}
+                onClick={handleResetPreview}
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700"
               >
                 Back to Edit

@@ -513,7 +513,7 @@ export const ContextWorkspacePanel: React.FC<ContextWorkspacePanelProps> = ({
           {searchQuery && (
             <button
               onClick={handleClearSearch}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-100 cursor-pointer"
             >
               <X className="w-3 h-3" />
             </button>
@@ -538,7 +538,7 @@ export const ContextWorkspacePanel: React.FC<ContextWorkspacePanelProps> = ({
 
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1.5 text-slate-400 hover:text-white bg-slate-900 border border-slate-800 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+            className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-900 border border-slate-800 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
             title={isExpanded ? "Collapse Dock" : "Expand Dock"}
           >
             {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
@@ -734,7 +734,7 @@ export const ContextWorkspacePanel: React.FC<ContextWorkspacePanelProps> = ({
                       >
                         <div>
                           <div className="flex items-center gap-2">
-                            <h4 className="text-xs font-extrabold text-white">{song.title}</h4>
+                            <h4 className="text-xs font-extrabold text-slate-100">{song.title}</h4>
                             {song.key && (
                               <span className="text-[10px] bg-indigo-900/80 text-indigo-200 px-2 py-0.5 rounded font-bold border border-indigo-700/50">
                                 Key: {song.key}

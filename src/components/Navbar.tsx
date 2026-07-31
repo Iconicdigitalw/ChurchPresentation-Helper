@@ -31,18 +31,25 @@ import {
   Building,
   Mail,
   CheckCircle,
-  ShieldAlert
+  ShieldAlert,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { QuickState, ViewMode, SearchMode } from '../types';
 import { 
-  ShortcutBinding, 
-  DEFAULT_SHORTCUTS, 
-  saveShortcuts, 
-  AppSettings, 
+  ShortcutBinding,
+  DEFAULT_SHORTCUTS,
+  saveShortcuts,
+  AppSettings,
+  getAppSettings,
   saveAppSettings,
   getUserProfileSettings,
   saveUserProfileSettings,
-  UserProfileSettings
+  UserProfileSettings,
+  UiTheme,
+  getUiTheme,
+  saveUiTheme,
+  applyUiTheme
 } from '../data/settingsAndTemplates';
 import { openLiveProjectorWindow } from '../utils/liveDisplayManager';
 
@@ -105,6 +112,20 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const [userProfile, setUserProfile] = useState<UserProfileSettings>(getUserProfileSettings());
 
+  const [uiTheme, setUiTheme] = useState<UiTheme>(() => getUiTheme());
+
+  const toggleUiTheme = () => {
+    const next: UiTheme = uiTheme === 'light' ? 'dark' : 'light';
+    // Briefly enable colour transitions so the swap eases rather than snaps.
+    const root = document.documentElement;
+    root.classList.add('theme-transition');
+    window.setTimeout(() => root.classList.remove('theme-transition'), 220);
+
+    applyUiTheme(next);
+    saveUiTheme(next);
+    setUiTheme(next);
+  };
+
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
     saveUserProfileSettings(userProfile);
@@ -138,11 +159,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const handleToggleSlideTrigger = (mode: 'double_click' | 'single_click') => {
     setSlideActivationMode(mode);
-    saveAppSettings({
-      slideActivationMode: mode,
-      autoLiveSearchOnlineSongs: true,
-      stageDisplayFontSize: 'large'
-    });
+    // Merge rather than rewrite: this used to clobber every other app setting.
+    saveAppSettings({ ...getAppSettings(), slideActivationMode: mode });
   };
 
   return (
@@ -156,10 +174,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             title="Click logo for profile, monitor, & settings dropdown"
           >
             <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:scale-105 transition-transform">
-              <Flame className="w-5 h-5 text-white" />
+              <Flame className="w-5 h-5 text-slate-100" />
             </div>
             <div className="flex flex-col">
-              <span className="font-black text-lg tracking-wider text-white flex items-center gap-1">
+              <span className="font-black text-lg tracking-wider text-slate-100 flex items-center gap-1">
                 WorshiPal<span className="text-amber-400 font-bold text-xs px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30">.com</span>
                 <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-amber-400 transition-transform ${isLogoMenuOpen ? 'rotate-180' : ''}`} />
               </span>
@@ -182,7 +200,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   setIsLogoMenuOpen(false);
                   setIsProfileModalOpen(true);
                 }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800 transition-colors text-left"
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:text-slate-100 hover:bg-slate-800 transition-colors text-left"
               >
                 <User className="w-4 h-4 text-amber-400" />
                 <span>Edit Profile & Church</span>
@@ -193,7 +211,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   setIsLogoMenuOpen(false);
                   setIsMonitorModalOpen(true);
                 }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800 transition-colors text-left"
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:text-slate-100 hover:bg-slate-800 transition-colors text-left"
               >
                 <Monitor className="w-4 h-4 text-indigo-400" />
                 <span>Multi-Monitor Display Setup</span>
@@ -204,7 +222,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   setIsLogoMenuOpen(false);
                   setShowSettingsModal(true);
                 }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800 transition-colors text-left"
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:text-slate-100 hover:bg-slate-800 transition-colors text-left"
               >
                 <SettingsIcon className="w-4 h-4 text-purple-400" />
                 <span>Shortcuts & Triggers</span>
@@ -217,7 +235,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   setIsLogoMenuOpen(false);
                   setIsAboutModalOpen(true);
                 }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 transition-colors text-left"
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-slate-100 hover:bg-slate-800 transition-colors text-left"
               >
                 <Info className="w-4 h-4 text-emerald-400" />
                 <span>About WorshiPal.com</span>
@@ -288,12 +306,31 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </div>
 
-        {/* Right Toolbar Controls: Keyboard Shortcuts, Info Alert, AI Live Listener on Extreme Right */}
+        {/* Right Toolbar Controls: Theme, Keyboard Shortcuts, Info Alert, AI Live Listener on Extreme Right */}
         <div className="flex items-center gap-2.5 shrink-0">
+          {/* Light / Dark UI Theme */}
+          <button
+            onClick={toggleUiTheme}
+            className="p-2 text-slate-400 bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:text-slate-100 rounded-xl transition-all"
+            title={
+              uiTheme === 'light'
+                ? 'Switch to dark mode (booth lighting)'
+                : 'Switch to light mode (bright room)'
+            }
+            aria-label={uiTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+            aria-pressed={uiTheme === 'light'}
+          >
+            {uiTheme === 'light' ? (
+              <Moon className="w-4.5 h-4.5 text-indigo-400" />
+            ) : (
+              <Sun className="w-4.5 h-4.5 text-amber-400" />
+            )}
+          </button>
+
           {/* Settings & Keyboard Shortcuts */}
           <button
             onClick={() => setShowSettingsModal(true)}
-            className="p-2 text-slate-400 bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-xl transition-all"
+            className="p-2 text-slate-400 bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:text-slate-100 rounded-xl transition-all"
             title="Customizable Keyboard Shortcuts & Trigger Settings"
           >
             <Keyboard className="w-4.5 h-4.5 text-indigo-400" />
@@ -334,13 +371,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="flex items-center gap-2">
                 <Keyboard className="w-5 h-5 text-indigo-400" />
                 <div>
-                  <h3 className="text-base font-bold text-white">Keyboard Shortcuts & Trigger Settings</h3>
+                  <h3 className="text-base font-bold text-slate-100">Keyboard Shortcuts & Trigger Settings</h3>
                   <p className="text-xs text-slate-400">Customize key bindings and slide live activation behavior</p>
                 </div>
               </div>
               <button
                 onClick={() => setShowSettingsModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -394,7 +431,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3"
                       >
                         <div>
-                          <p className="font-bold text-white">{sc.label}</p>
+                          <p className="font-bold text-slate-100">{sc.label}</p>
                           <span className="text-[10px] text-slate-500">{sc.category}</span>
                         </div>
 
@@ -441,7 +478,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                             </button>
                             <button
                               onClick={() => setEditingShortcutId(null)}
-                              className="p-1 text-slate-400 hover:text-white text-[10px]"
+                              className="p-1 text-slate-400 hover:text-slate-100 text-[10px]"
                             >
                               <X className="w-3.5 h-3.5" />
                             </button>
@@ -464,7 +501,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 /* Slide Trigger Settings */
                 <div className="space-y-4 text-xs">
                   <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
-                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                    <h4 className="font-bold text-slate-100 text-sm flex items-center gap-2">
                       <MousePointer className="w-4 h-4 text-amber-400" />
                       <span>Slide Preview Live Activation Trigger</span>
                     </h4>
@@ -478,7 +515,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         onClick={() => handleToggleSlideTrigger('double_click')}
                         className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
                           slideActivationMode === 'double_click'
-                            ? 'bg-indigo-950/60 border-indigo-500 text-white ring-1 ring-indigo-500'
+                            ? 'bg-indigo-950/60 border-indigo-500 text-slate-100 ring-1 ring-indigo-500'
                             : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
                         }`}
                       >
@@ -498,7 +535,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         onClick={() => handleToggleSlideTrigger('single_click')}
                         className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
                           slideActivationMode === 'single_click'
-                            ? 'bg-indigo-950/60 border-indigo-500 text-white ring-1 ring-indigo-500'
+                            ? 'bg-indigo-950/60 border-indigo-500 text-slate-100 ring-1 ring-indigo-500'
                             : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
                         }`}
                       >
@@ -544,7 +581,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <button 
                 onClick={() => setIsProfileModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                className="text-slate-400 hover:text-slate-100 p-1 rounded-lg hover:bg-slate-800 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -643,7 +680,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <button 
                 onClick={() => setIsMonitorModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                className="text-slate-400 hover:text-slate-100 p-1 rounded-lg hover:bg-slate-800 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -660,7 +697,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={() => setUserProfile({ ...userProfile, selectedMonitor: 'secondary' })}
                   className={`p-3 rounded-xl border cursor-pointer transition-all ${
                     userProfile.selectedMonitor === 'secondary'
-                      ? 'bg-indigo-950/80 border-indigo-500 ring-1 ring-indigo-500 text-white'
+                      ? 'bg-indigo-950/80 border-indigo-500 ring-1 ring-indigo-500 text-slate-100'
                       : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
                   }`}
                 >
@@ -681,7 +718,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={() => setUserProfile({ ...userProfile, selectedMonitor: 'stage' })}
                   className={`p-3 rounded-xl border cursor-pointer transition-all ${
                     userProfile.selectedMonitor === 'stage'
-                      ? 'bg-indigo-950/80 border-indigo-500 ring-1 ring-indigo-500 text-white'
+                      ? 'bg-indigo-950/80 border-indigo-500 ring-1 ring-indigo-500 text-slate-100'
                       : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
                   }`}
                 >
@@ -702,7 +739,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={() => setUserProfile({ ...userProfile, selectedMonitor: 'primary' })}
                   className={`p-3 rounded-xl border cursor-pointer transition-all ${
                     userProfile.selectedMonitor === 'primary'
-                      ? 'bg-indigo-950/80 border-indigo-500 ring-1 ring-indigo-500 text-white'
+                      ? 'bg-indigo-950/80 border-indigo-500 ring-1 ring-indigo-500 text-slate-100'
                       : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
                   }`}
                 >
@@ -734,7 +771,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   type="button"
                   onClick={handleLaunchProjectorWindow}
-                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-indigo-600 hover:from-amber-400 hover:to-indigo-500 text-white font-extrabold rounded-xl shadow-lg flex items-center gap-2 cursor-pointer"
+                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-indigo-600 hover:from-amber-400 hover:to-indigo-500 text-slate-100 font-extrabold rounded-xl shadow-lg flex items-center gap-2 cursor-pointer"
                 >
                   <ExternalLink className="w-4 h-4" />
                   <span>Launch Live Monitor Window</span>
@@ -758,7 +795,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <button 
                 onClick={() => setIsAboutModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                className="text-slate-400 hover:text-slate-100 p-1 rounded-lg hover:bg-slate-800 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -767,10 +804,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="p-5 space-y-4 text-xs text-slate-300 leading-relaxed">
               <div className="flex items-center gap-3 p-3 bg-slate-950 rounded-xl border border-slate-800">
                 <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-indigo-600 rounded-xl flex items-center justify-center shrink-0">
-                  <Flame className="w-6 h-6 text-white" />
+                  <Flame className="w-6 h-6 text-slate-100" />
                 </div>
                 <div>
-                  <h4 className="font-black text-base text-white">WorshiPal.com</h4>
+                  <h4 className="font-black text-base text-slate-100">WorshiPal.com</h4>
                   <p className="text-[10px] text-amber-400 font-semibold">Version 2.5 • Church Presentation Studio</p>
                 </div>
               </div>

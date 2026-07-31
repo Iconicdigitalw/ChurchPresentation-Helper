@@ -3,14 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  ScheduleItem, 
-  Slide, 
-  QuickState, 
-  AlertOverlay, 
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import {
+  ScheduleItem,
+  Slide,
+  QuickState,
+  AlertOverlay,
   ViewMode,
-  SearchMode 
+  SearchMode
 } from './types';
 import { INITIAL_SCHEDULE } from './data/mockData';
 import { Navbar } from './components/Navbar';
@@ -26,22 +26,42 @@ import { AlertOverlayModal } from './components/AlertOverlayModal';
 import { StageDisplayView } from './components/StageDisplayView';
 import { PresentationBuilderModal } from './components/PresentationBuilderModal';
 import { ScheduleItemSettingsModal } from './components/ScheduleItemSettingsModal';
-import { 
-  getSavedShortcuts, 
-  getAppSettings, 
-  ShortcutBinding 
+import { ConfirmDialog, ConfirmRequest } from './components/ConfirmDialog';
+import { RestoreSessionPrompt } from './components/RestoreSessionPrompt';
+import {
+  getSavedShortcuts,
+  getAppSettings,
+  ShortcutBinding
 } from './data/settingsAndTemplates';
+import {
+  PersistedSchedule,
+  clearPersistedSchedule,
+  loadPersistedSchedule,
+  savePersistedSchedule
+} from './data/schedulePersistence';
+import {
+  createInitialScheduleState,
+  getCurrentItem,
+  getNextSlide,
+  scheduleReducer
+} from './state/scheduleReducer';
+import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 import { broadcastLiveSlideState } from './utils/liveDisplayManager';
 
+/** How long to wait after the last edit before writing the schedule to storage. */
+const AUTOSAVE_DEBOUNCE_MS = 700;
+
 export default function App() {
-  // Main State
-  const [schedule, setSchedule] = useState<ScheduleItem[]>(INITIAL_SCHEDULE);
-  const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(INITIAL_SCHEDULE[0].id);
-  const [activeSlideIndex, setActiveSlideIndex] = useState<number>(0);
-  const [liveSlide, setLiveSlide] = useState<Slide | null>(INITIAL_SCHEDULE[0].slides[0] || null);
-  const [previewOverrideSlide, setPreviewOverrideSlide] = useState<Slide | null>(null);
+  // Running order, selection and live output all live in one reducer so the
+  // live-slide invariants cannot drift apart across handlers.
+  const [state, dispatch] = useReducer(
+    scheduleReducer,
+    INITIAL_SCHEDULE,
+    createInitialScheduleState
+  );
+  const { schedule, selectedScheduleId, activeSlideIndex, liveSlide, quickState } = state;
+
   const [isLiveOutputOn, setIsLiveOutputOn] = useState<boolean>(true);
-  const [quickState, setQuickState] = useState<QuickState>('normal');
   const [alertOverlay, setAlertOverlay] = useState<AlertOverlay | null>(null);
   const [activeViewMode, setActiveViewMode] = useState<ViewMode>('operator');
   const [isMicActive, setIsMicActive] = useState<boolean>(false);
@@ -65,424 +85,198 @@ export default function App() {
   const [isScheduleSettingsOpen, setIsScheduleSettingsOpen] = useState(false);
   const [settingsModalItem, setSettingsModalItem] = useState<ScheduleItem | null>(null);
 
+  // Destructive-action guard
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
+
+  // Autosave / restore
+  const [restorable, setRestorable] = useState<PersistedSchedule | null>(null);
+  const [isAutosaveArmed, setIsAutosaveArmed] = useState(false);
+  const [persistenceNotice, setPersistenceNotice] = useState<string | null>(null);
+
   // Resizable Column Widths
   const [scheduleWidth, setScheduleWidth] = useState(280);
   const [livePreviewWidth, setLivePreviewWidth] = useState(360);
 
-  const handleLeftResizeStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = scheduleWidth;
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const delta = moveEvent.clientX - startX;
-      setScheduleWidth(Math.min(Math.max(startW + delta, 180), 550));
-    };
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-    };
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  };
+  const currentItem = getCurrentItem(state);
+  const nextSlide = getNextSlide(state);
 
-  const handleRightResizeStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = livePreviewWidth;
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const delta = startX - moveEvent.clientX;
-      setLivePreviewWidth(Math.min(Math.max(startW + delta, 220), 650));
-    };
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-    };
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  };
+  // ---------------------------------------------------------------------------
+  // Autosave & restore
+  // ---------------------------------------------------------------------------
 
-  const openQuickSearchWithMode = useCallback((query: string = '') => {
-    setSearchInitialQuery(query);
-    if (searchMode === 'bible') {
-      setIsBibleModalOpen(true);
-    } else if (searchMode === 'songs') {
-      setIsSongModalOpen(true);
-    } else if (searchMode === 'visuals') {
-      setIsMediaGenOpen(true);
-    } else if (searchMode === 'deck') {
-      setIsPresentationBuilderOpen(true);
+  // Look for an autosaved plan once, before autosave is allowed to run - writing
+  // the default schedule first would destroy whatever we are offering to restore.
+  useEffect(() => {
+    const saved = loadPersistedSchedule();
+    if (saved) {
+      setRestorable(saved);
+    } else {
+      setIsAutosaveArmed(true);
     }
-  }, [searchMode]);
+  }, []);
 
-  // Currently selected item
-  const currentItem = schedule.find(item => item.id === selectedScheduleId) || null;
+  const autosaveTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (!isAutosaveArmed) return;
+
+    window.clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = window.setTimeout(() => {
+      const outcome = savePersistedSchedule(schedule, selectedScheduleId, activeSlideIndex);
+      if (outcome.status === 'failed') {
+        setPersistenceNotice(outcome.reason);
+      } else if (outcome.backgroundsDropped) {
+        setPersistenceNotice(
+          'Service plan saved, but generated backgrounds were too large to store.'
+        );
+      } else {
+        setPersistenceNotice(null);
+      }
+    }, AUTOSAVE_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(autosaveTimer.current);
+  }, [isAutosaveArmed, schedule, selectedScheduleId, activeSlideIndex]);
+
+  const handleRestoreSession = useCallback(() => {
+    if (!restorable) return;
+    dispatch({
+      type: 'restore',
+      schedule: restorable.schedule,
+      selectedScheduleId: restorable.selectedScheduleId,
+      activeSlideIndex: restorable.activeSlideIndex
+    });
+    setRestorable(null);
+    setIsAutosaveArmed(true);
+  }, [restorable]);
+
+  const handleDismissRestore = useCallback(() => {
+    clearPersistedSchedule();
+    setRestorable(null);
+    setIsAutosaveArmed(true);
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Live output
+  // ---------------------------------------------------------------------------
 
   // Broadcast live slide state to external popout display window in real time
   useEffect(() => {
     broadcastLiveSlideState(
-      isLiveOutputOn ? liveSlide : null, 
-      quickState, 
+      isLiveOutputOn ? liveSlide : null,
+      quickState,
       alertOverlay ? `${alertOverlay.title}: ${alertOverlay.message}` : null
     );
   }, [liveSlide, isLiveOutputOn, quickState, alertOverlay]);
 
-  // Calculate Next Slide preview
-  const getNextSlide = (): Slide | null => {
-    if (previewOverrideSlide) return previewOverrideSlide;
-    if (!currentItem) return null;
-    if (activeSlideIndex < currentItem.slides.length - 1) {
-      return currentItem.slides[activeSlideIndex + 1];
-    }
-    // Next item's first slide
-    const currentItemIndex = schedule.findIndex(i => i.id === selectedScheduleId);
-    if (currentItemIndex >= 0 && currentItemIndex < schedule.length - 1) {
-      const nextItem = schedule[currentItemIndex + 1];
-      return nextItem.slides[0] || null;
-    }
-    return null;
-  };
+  const setQuickState = useCallback((next: QuickState) => {
+    dispatch({ type: 'setQuickState', quickState: next });
+  }, []);
 
-  const nextSlide = getNextSlide();
+  const handlePushSlideToLiveDirect = useCallback((slide: Slide) => {
+    dispatch({ type: 'pushSlideLive', slide });
+  }, []);
 
-  // Navigation Logic
-  const handleSelectScheduleItem = (id: string) => {
-    setSelectedScheduleId(id);
-    setActiveSlideIndex(0);
-  };
+  // ---------------------------------------------------------------------------
+  // Search & modals
+  // ---------------------------------------------------------------------------
 
-  const handleSelectSlide = (index: number, goLive: boolean = true) => {
-    setActiveSlideIndex(index);
-    if (currentItem && currentItem.slides[index]) {
-      if (goLive) {
-        setLiveSlide(currentItem.slides[index]);
-        if (quickState !== 'normal') {
-          setQuickState('normal');
-        }
-      }
-    }
-  };
+  const openQuickSearchWithMode = useCallback(
+    (query: string = '') => {
+      setSearchInitialQuery(query);
+      if (searchMode === 'bible') setIsBibleModalOpen(true);
+      else if (searchMode === 'songs') setIsSongModalOpen(true);
+      else if (searchMode === 'visuals') setIsMediaGenOpen(true);
+      else if (searchMode === 'deck') setIsPresentationBuilderOpen(true);
+    },
+    [searchMode]
+  );
 
-  const handleGoNextSlide = useCallback(() => {
-    if (!currentItem) return;
+  const isAnyModalOpen =
+    isSermonModalOpen ||
+    isPresentationBuilderOpen ||
+    isBibleModalOpen ||
+    isSongModalOpen ||
+    isMediaGenOpen ||
+    isAlertModalOpen ||
+    isScheduleSettingsOpen ||
+    confirmRequest !== null;
 
-    if (activeSlideIndex < currentItem.slides.length - 1) {
-      const nextIdx = activeSlideIndex + 1;
-      setActiveSlideIndex(nextIdx);
-      const nextSlide = currentItem.slides[nextIdx];
-      if (nextSlide) {
-        setLiveSlide(nextSlide);
-        setPreviewOverrideSlide(null);
-        setQuickState('normal');
-      }
-    } else {
-      // Advance to next schedule item
-      const currentItemIndex = schedule.findIndex(i => i.id === selectedScheduleId);
-      if (currentItemIndex >= 0 && currentItemIndex < schedule.length - 1) {
-        const nextItem = schedule[currentItemIndex + 1];
-        setSelectedScheduleId(nextItem.id);
-        setActiveSlideIndex(0);
-        if (nextItem.slides[0]) {
-          setLiveSlide(nextItem.slides[0]);
-          setPreviewOverrideSlide(null);
-          setQuickState('normal');
-        }
-      }
-    }
-  }, [currentItem, activeSlideIndex, schedule, selectedScheduleId]);
-
-  const handleGoPrevSlide = useCallback(() => {
-    if (!currentItem) return;
-
-    if (activeSlideIndex > 0) {
-      const prevIdx = activeSlideIndex - 1;
-      setActiveSlideIndex(prevIdx);
-      const prevSlide = currentItem.slides[prevIdx];
-      if (prevSlide) {
-        setLiveSlide(prevSlide);
-        setPreviewOverrideSlide(null);
-        setQuickState('normal');
-      }
-    } else {
-      // Return to last slide of previous schedule item
-      const currentItemIndex = schedule.findIndex(i => i.id === selectedScheduleId);
-      if (currentItemIndex > 0) {
-        const prevItem = schedule[currentItemIndex - 1];
-        setSelectedScheduleId(prevItem.id);
-        const lastIdx = Math.max(0, prevItem.slides.length - 1);
-        setActiveSlideIndex(lastIdx);
-        if (prevItem.slides[lastIdx]) {
-          setLiveSlide(prevItem.slides[lastIdx]);
-          setPreviewOverrideSlide(null);
-          setQuickState('normal');
-        }
-      }
-    }
-  }, [currentItem, activeSlideIndex, schedule, selectedScheduleId]);
-
-  const handleGoNextScheduleItem = useCallback(() => {
-    const currentItemIndex = schedule.findIndex(i => i.id === selectedScheduleId);
-    if (currentItemIndex >= 0 && currentItemIndex < schedule.length - 1) {
-      const nextItem = schedule[currentItemIndex + 1];
-      setSelectedScheduleId(nextItem.id);
-      setActiveSlideIndex(0);
-    }
-  }, [schedule, selectedScheduleId]);
-
-  const handleGoPrevScheduleItem = useCallback(() => {
-    const currentItemIndex = schedule.findIndex(i => i.id === selectedScheduleId);
-    if (currentItemIndex > 0) {
-      const prevItem = schedule[currentItemIndex - 1];
-      setSelectedScheduleId(prevItem.id);
-      setActiveSlideIndex(0);
-    }
-  }, [schedule, selectedScheduleId]);
-
-  const handlePushLive = useCallback(() => {
-    if (currentItem && currentItem.slides[activeSlideIndex]) {
-      setLiveSlide(currentItem.slides[activeSlideIndex]);
-      if (quickState !== 'normal') {
-        setQuickState('normal');
-      }
-    }
-  }, [currentItem, activeSlideIndex, quickState]);
-
-  // Global Customizable Keyboard Shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const targetEl = e.target as HTMLElement;
-      const activeEl = document.activeElement as HTMLElement;
-
-      // Ignore if typing in input/textarea, focused inside context workspace panel, or modal open
-      if (
-        ['INPUT', 'TEXTAREA', 'SELECT'].includes(targetEl?.tagName) ||
-        ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl?.tagName) ||
-        targetEl?.closest('.context-workspace-panel') ||
-        activeEl?.closest('.context-workspace-panel') ||
-        isSermonModalOpen ||
-        isPresentationBuilderOpen ||
-        isBibleModalOpen ||
-        isSongModalOpen ||
-        isMediaGenOpen ||
-        isAlertModalOpen
-      ) {
-        return;
-      }
-
-      // Check for Slash or Ctrl+K / Cmd+K for quick search trigger
-      if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) {
-        e.preventDefault();
-        openQuickSearchWithMode('');
-        return;
-      }
-
-      // Helper to match configured custom shortcut keys
-      const matchesShortcut = (actionId: string) => {
-        const binding = shortcuts.find(s => s.id === actionId);
-        if (!binding || !binding.key) return false;
-
-        const parts = binding.key.toLowerCase().split('+').map(k => k.trim());
-        const mainKey = parts[parts.length - 1];
-        const hasCtrl = parts.includes('ctrl') || parts.includes('cmd') || parts.includes('meta');
-        const hasShift = parts.includes('shift');
-        const hasAlt = parts.includes('alt');
-
-        if (hasCtrl && !(e.ctrlKey || e.metaKey)) return false;
-        if (hasShift && !e.shiftKey) return false;
-        if (hasAlt && !e.altKey) return false;
-
-        // Ensure no unrequested modifiers are pressed
-        if (!hasCtrl && (e.ctrlKey || e.metaKey)) return false;
-        if (!hasAlt && e.altKey) return false;
-
-        const eventKey = e.key.toLowerCase();
-        const eventCode = e.code.toLowerCase();
-
-        if (mainKey === eventKey || mainKey === eventCode) return true;
-        if ((mainKey === 'space' || mainKey === 'spacebar') && e.code === 'Space') return true;
-        if (mainKey === 'enter' && e.key === 'Enter') return true;
-        if ((mainKey === 'arrowright' || mainKey === 'arrow right') && e.key === 'ArrowRight') return true;
-        if ((mainKey === 'arrowleft' || mainKey === 'arrow left') && e.key === 'ArrowLeft') return true;
-        if ((mainKey === 'arrowup' || mainKey === 'arrow up') && e.key === 'ArrowUp') return true;
-        if ((mainKey === 'arrowdown' || mainKey === 'arrow down') && e.key === 'ArrowDown') return true;
-
-        return false;
-      };
-
-      if (matchesShortcut('trigger_voice_search')) {
-        e.preventDefault();
-        setIsLiveCompanionOpen(true);
-        return;
-      }
-
-      if (e.key === 'Enter' || matchesShortcut('push_live')) {
-        e.preventDefault();
-        handlePushLive();
-        return;
-      }
-
-      if (e.key === 'ArrowRight' || e.code === 'Space' || e.key === 'PageDown' || matchesShortcut('next_slide')) {
-        e.preventDefault();
-        handleGoNextSlide();
-        return;
-      }
-      if (e.key === 'ArrowLeft' || e.key === 'PageUp' || matchesShortcut('prev_slide')) {
-        e.preventDefault();
-        handleGoPrevSlide();
-        return;
-      }
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (e.shiftKey || e.ctrlKey || e.metaKey) {
-          handleGoNextScheduleItem();
-        } else {
-          handleGoNextSlide();
-        }
-        return;
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (e.shiftKey || e.ctrlKey || e.metaKey) {
-          handleGoPrevScheduleItem();
-        } else {
-          handleGoPrevSlide();
-        }
-        return;
-      }
-      if (matchesShortcut('toggle_clear_text')) {
-        e.preventDefault();
-        setQuickState(prev => prev === 'clearText' ? 'normal' : 'clearText');
-        return;
-      }
-      if (matchesShortcut('toggle_clear_bg')) {
-        e.preventDefault();
-        setQuickState(prev => prev === 'clearBg' ? 'normal' : 'clearBg');
-        return;
-      }
-      if (matchesShortcut('toggle_black')) {
-        e.preventDefault();
-        setQuickState(prev => prev === 'black' ? 'normal' : 'black');
-        return;
-      }
-      if (matchesShortcut('toggle_logo')) {
-        e.preventDefault();
-        setQuickState(prev => prev === 'logo' ? 'normal' : 'logo');
-        return;
-      }
-      if (matchesShortcut('toggle_live_output')) {
-        e.preventDefault();
-        setIsLiveOutputOn(prev => !prev);
-        return;
-      }
-      if (matchesShortcut('open_bible')) {
-        e.preventDefault();
+  const shortcutHandlers = useMemo(
+    () => ({
+      onNextSlide: () => dispatch({ type: 'nextSlide' }),
+      onPrevSlide: () => dispatch({ type: 'prevSlide' }),
+      onNextItem: () => dispatch({ type: 'nextItem' }),
+      onPrevItem: () => dispatch({ type: 'prevItem' }),
+      onPushLive: () => dispatch({ type: 'pushActiveSlideLive' }),
+      onToggleQuickState: (next: QuickState) => dispatch({ type: 'toggleQuickState', quickState: next }),
+      onToggleLiveOutput: () => setIsLiveOutputOn(prev => !prev),
+      onOpenLiveCompanion: () => setIsLiveCompanionOpen(true),
+      onOpenBible: () => {
         setSearchInitialQuery('');
         setIsBibleModalOpen(true);
-        return;
-      }
-      if (matchesShortcut('open_songs')) {
-        e.preventDefault();
+      },
+      onOpenSongs: () => {
         setSearchInitialQuery('');
         setIsSongModalOpen(true);
-        return;
-      }
-      if (matchesShortcut('switch_search_mode')) {
-        e.preventDefault();
-        setSearchMode(prev => 
-          prev === 'bible' ? 'songs' : 
-          prev === 'songs' ? 'visuals' : 
-          prev === 'visuals' ? 'deck' : 'bible'
-        );
-        return;
-      }
-      if (matchesShortcut('open_deck')) {
-        e.preventDefault();
-        setIsPresentationBuilderOpen(true);
-        return;
-      }
+      },
+      onOpenDeck: () => setIsPresentationBuilderOpen(true),
+      onCycleSearchMode: () =>
+        setSearchMode(prev =>
+          prev === 'bible' ? 'songs' : prev === 'songs' ? 'visuals' : prev === 'visuals' ? 'deck' : 'bible'
+        ),
+      onQuickSearch: openQuickSearchWithMode
+    }),
+    [openQuickSearchWithMode]
+  );
 
-      // Fallback Speed Typing Quick Search Trigger
-      if (
-        e.key.length === 1 &&
-        !e.ctrlKey &&
-        !e.altKey &&
-        !e.metaKey &&
-        /[a-zA-Z0-9:\-,."']/i.test(e.key)
-      ) {
-        e.preventDefault();
-        openQuickSearchWithMode(e.key);
-        return;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
+  useGlobalShortcuts({
     shortcuts,
-    handleGoNextSlide,
-    handleGoPrevSlide,
-    handleGoNextScheduleItem,
-    handleGoPrevScheduleItem,
-    handlePushLive,
-    isSermonModalOpen,
-    isPresentationBuilderOpen,
-    isBibleModalOpen,
-    isSongModalOpen,
-    isMediaGenOpen,
-    isAlertModalOpen,
-    openQuickSearchWithMode
-  ]);
+    enabled: !isAnyModalOpen,
+    handlers: shortcutHandlers
+  });
 
-  // Schedule Modification Handlers
+  // ---------------------------------------------------------------------------
+  // Schedule & slide mutations
+  // ---------------------------------------------------------------------------
+
   const handleOpenScheduleSettings = (item: ScheduleItem) => {
     setSettingsModalItem(item);
     setIsScheduleSettingsOpen(true);
   };
 
   const handleUpdateScheduleItemFields = (itemId: string, updatedFields: Partial<ScheduleItem>) => {
-    setSchedule(prev => prev.map(item => {
-      if (item.id === itemId) {
-        const updated = { ...item, ...updatedFields };
-        if (settingsModalItem && settingsModalItem.id === itemId) {
-          setSettingsModalItem(updated);
-        }
-        // Sync live slide if currently showing one from this item
-        if (liveSlide && item.slides.some(s => s.id === liveSlide.id)) {
-          const matchingLiveSlide = updated.slides.find(s => s.id === liveSlide.id);
-          if (matchingLiveSlide) {
-            setLiveSlide(matchingLiveSlide);
-          }
-        }
-        return updated;
-      }
-      return item;
-    }));
-  };
-
-  const handleMoveScheduleItem = (index: number, direction: 'up' | 'down') => {
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= schedule.length) return;
-
-    const newSchedule = [...schedule];
-    const [movedItem] = newSchedule.splice(index, 1);
-    newSchedule.splice(targetIndex, 0, movedItem);
-    setSchedule(newSchedule);
-  };
-
-  const handleReorderScheduleItems = (reorderedList: ScheduleItem[]) => {
-    setSchedule(reorderedList);
+    dispatch({ type: 'updateItemFields', id: itemId, fields: updatedFields });
+    setSettingsModalItem(prev => (prev && prev.id === itemId ? { ...prev, ...updatedFields } : prev));
   };
 
   const handleDeleteScheduleItem = (id: string) => {
-    if (schedule.length <= 1) return;
-    const newSchedule = schedule.filter(item => item.id !== id);
-    setSchedule(newSchedule);
-    if (selectedScheduleId === id) {
-      setSelectedScheduleId(newSchedule[0].id);
-      setActiveSlideIndex(0);
-      if (newSchedule[0].slides[0]) {
-        setLiveSlide(newSchedule[0].slides[0]);
-      }
+    const item = schedule.find(i => i.id === id);
+    if (!item) return;
+
+    if (schedule.length <= 1) {
+      setConfirmRequest({
+        title: 'Cannot remove the last item',
+        message: 'The service schedule must contain at least one item.',
+        confirmLabel: 'OK',
+        cancelLabel: 'Close',
+        onConfirm: () => undefined
+      });
+      return;
     }
+
+    setConfirmRequest({
+      title: `Delete "${item.title}"?`,
+      message: `This removes the item and all ${item.slides.length} of its slides from the service schedule. This cannot be undone.`,
+      confirmLabel: 'Delete item',
+      onConfirm: () => {
+        dispatch({ type: 'deleteItem', id });
+        // The settings modal may be open on the item being removed.
+        if (settingsModalItem?.id === id) {
+          setIsScheduleSettingsOpen(false);
+          setSettingsModalItem(null);
+        }
+      }
+    });
   };
 
   const handleAddCustomScheduleItem = (title: string, type: ScheduleItem['type']) => {
@@ -501,129 +295,64 @@ export default function App() {
         }
       ]
     };
-
-    setSchedule(prev => [...prev, newItem]);
-    setSelectedScheduleId(newItem.id);
-    setActiveSlideIndex(0);
-    setLiveSlide(newItem.slides[0]);
+    dispatch({ type: 'addItem', item: newItem });
   };
 
   const handleAddConvertedDeck = (item: ScheduleItem) => {
-    setSchedule(prev => [...prev, item]);
-    setSelectedScheduleId(item.id);
-    setActiveSlideIndex(0);
-    if (item.slides.length > 0) {
-      setLiveSlide(item.slides[0]);
-    }
-  };
-
-  const handlePushSlideToLiveDirect = (slide: Slide) => {
-    setLiveSlide(slide);
-    setPreviewOverrideSlide(null);
-    setQuickState('normal');
-  };
-
-  const handleAddSongItem = (item: ScheduleItem) => {
-    setSchedule(prev => [...prev, item]);
-    setSelectedScheduleId(item.id);
-    setActiveSlideIndex(0);
-    if (item.slides.length > 0) {
-      setLiveSlide(item.slides[0]);
-    }
-  };
-
-  // Slide CRUD handlers
-  const handleUpdateSlide = (slideId: string, updatedSlide: Partial<Slide>) => {
-    if (!currentItem) return;
-
-    const updatedSlides = currentItem.slides.map(s => {
-      if (s.id === slideId) {
-        return { ...s, ...updatedSlide };
-      }
-      return s;
-    });
-
-    const updatedSchedule = schedule.map(item => {
-      if (item.id === currentItem.id) {
-        return { ...item, slides: updatedSlides };
-      }
-      return item;
-    });
-
-    setSchedule(updatedSchedule);
-
-    if (liveSlide && liveSlide.id === slideId) {
-      setLiveSlide(prev => (prev ? { ...prev, ...updatedSlide } : null));
-    }
-  };
-
-  const handleAddSlide = (itemIndex: number) => {
-    if (!currentItem) return;
-
-    const newSlide: Slide = {
-      id: `slide-${Date.now()}`,
-      type: 'point',
-      header: 'New Slide Header',
-      body: 'Click edit icon to customize text content, scriptures, or speaker notes.',
-      themeStyle: 'modern-dark'
-    };
-
-    const newSlides = [...currentItem.slides];
-    newSlides.splice(activeSlideIndex + 1, 0, newSlide);
-
-    const updatedSchedule = schedule.map(item => {
-      if (item.id === currentItem.id) {
-        return { ...item, slides: newSlides };
-      }
-      return item;
-    });
-
-    setSchedule(updatedSchedule);
-    setActiveSlideIndex(activeSlideIndex + 1);
+    dispatch({ type: 'addItem', item });
   };
 
   const handleDeleteSlide = (slideId: string) => {
-    if (!currentItem || currentItem.slides.length <= 1) return;
-
-    const newSlides = currentItem.slides.filter(s => s.id !== slideId);
-
-    const updatedSchedule = schedule.map(item => {
-      if (item.id === currentItem.id) {
-        return { ...item, slides: newSlides };
-      }
-      return item;
-    });
-
-    setSchedule(updatedSchedule);
-    const newIdx = Math.max(0, activeSlideIndex - 1);
-    setActiveSlideIndex(newIdx);
-
-    if (liveSlide && liveSlide.id === slideId) {
-      setLiveSlide(newSlides[newIdx] || null);
-    }
-  };
-
-  const handleDuplicateSlide = (slide: Slide) => {
     if (!currentItem) return;
 
-    const dupSlide: Slide = {
-      ...slide,
-      id: `slide-dup-${Date.now()}`,
-      header: slide.header ? `${slide.header} (Copy)` : 'Copy'
+    if (currentItem.slides.length <= 1) {
+      setConfirmRequest({
+        title: 'Cannot remove the last slide',
+        message: 'A schedule item must contain at least one slide.',
+        confirmLabel: 'OK',
+        cancelLabel: 'Close',
+        onConfirm: () => undefined
+      });
+      return;
+    }
+
+    const slide = currentItem.slides.find(s => s.id === slideId);
+    const isLive = liveSlide?.id === slideId;
+
+    setConfirmRequest({
+      title: 'Delete this slide?',
+      message: isLive
+        ? `"${slide?.header || 'This slide'}" is currently on the live output. Deleting it will move the live output to the previous slide.`
+        : `"${slide?.header || 'This slide'}" will be removed from "${currentItem.title}". This cannot be undone.`,
+      confirmLabel: 'Delete slide',
+      onConfirm: () => dispatch({ type: 'deleteSlide', slideId })
+    });
+  };
+
+  // ---------------------------------------------------------------------------
+  // Panel resizing
+  // ---------------------------------------------------------------------------
+
+  const startColumnResize = (
+    event: React.MouseEvent,
+    startWidth: number,
+    apply: (width: number) => void,
+    { invert = false, min, max }: { invert?: boolean; min: number; max: number }
+  ) => {
+    event.preventDefault();
+    const startX = event.clientX;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = invert ? startX - moveEvent.clientX : moveEvent.clientX - startX;
+      apply(Math.min(Math.max(startWidth + delta, min), max));
+    };
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
     };
 
-    const newSlides = [...currentItem.slides];
-    newSlides.splice(activeSlideIndex + 1, 0, dupSlide);
-
-    const updatedSchedule = schedule.map(item => {
-      if (item.id === currentItem.id) {
-        return { ...item, slides: newSlides };
-      }
-      return item;
-    });
-
-    setSchedule(updatedSchedule);
-    setActiveSlideIndex(activeSlideIndex + 1);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
   };
 
   return (
@@ -661,9 +390,9 @@ export default function App() {
             selectedScheduleId={selectedScheduleId}
             liveSlideId={liveSlide?.id || null}
             isLiveOutputOn={isLiveOutputOn}
-            onSelectScheduleItem={handleSelectScheduleItem}
-            onMoveItem={handleMoveScheduleItem}
-            onReorderItems={handleReorderScheduleItems}
+            onSelectScheduleItem={(id) => dispatch({ type: 'selectItem', id })}
+            onMoveItem={(index, direction) => dispatch({ type: 'moveItem', index, direction })}
+            onReorderItems={(items) => dispatch({ type: 'reorderItems', items })}
             onDeleteItem={handleDeleteScheduleItem}
             onOpenSettingsModal={handleOpenScheduleSettings}
             openSermonConverter={() => setIsSermonModalOpen(true)}
@@ -678,7 +407,9 @@ export default function App() {
 
           {/* Left Vertical Resizer Handle */}
           <div
-            onMouseDown={handleLeftResizeStart}
+            onMouseDown={(e) =>
+              startColumnResize(e, scheduleWidth, setScheduleWidth, { min: 180, max: 550 })
+            }
             className="hidden lg:flex w-1.5 hover:w-2 bg-slate-800 hover:bg-amber-500/80 active:bg-amber-500 cursor-col-resize transition-all items-center justify-center shrink-0 z-20 group"
             title="Drag to adjust schedule panel width"
           >
@@ -689,11 +420,11 @@ export default function App() {
           <SlideGridPanel
             currentItem={currentItem}
             activeSlideIndex={activeSlideIndex}
-            onSelectSlide={handleSelectSlide}
-            onUpdateSlide={handleUpdateSlide}
-            onAddSlide={handleAddSlide}
+            onSelectSlide={(index, goLive) => dispatch({ type: 'selectSlide', index, goLive })}
+            onUpdateSlide={(slideId, patch) => dispatch({ type: 'updateSlide', slideId, patch })}
+            onAddSlide={() => dispatch({ type: 'addSlide' })}
             onDeleteSlide={handleDeleteSlide}
-            onDuplicateSlide={handleDuplicateSlide}
+            onDuplicateSlide={(slide) => dispatch({ type: 'duplicateSlide', slide })}
             liveSlideId={liveSlide?.id || null}
             openMediaGenerator={() => setIsMediaGenOpen(true)}
             slideActivationMode={slideActivationMode}
@@ -701,17 +432,20 @@ export default function App() {
             liveSlide={liveSlide}
             schedule={schedule}
             onPushSlideToLive={handlePushSlideToLiveDirect}
-            onPreviewSlide={(slide) => setPreviewOverrideSlide(slide)}
-            onAddScriptureItem={(item) => {
-              setSchedule(prev => [...prev, item]);
-              setSelectedScheduleId(item.id);
-            }}
-            onAddSongItem={handleAddSongItem}
+            onPreviewSlide={(slide) => dispatch({ type: 'previewSlide', slide })}
+            onAddScriptureItem={(item) => dispatch({ type: 'addItem', item })}
+            onAddSongItem={(item) => dispatch({ type: 'addItem', item })}
           />
 
           {/* Right Vertical Resizer Handle */}
           <div
-            onMouseDown={handleRightResizeStart}
+            onMouseDown={(e) =>
+              startColumnResize(e, livePreviewWidth, setLivePreviewWidth, {
+                invert: true,
+                min: 220,
+                max: 650
+              })
+            }
             className="hidden lg:flex w-1.5 hover:w-2 bg-slate-800 hover:bg-amber-500/80 active:bg-amber-500 cursor-col-resize transition-all items-center justify-center shrink-0 z-20 group"
             title="Drag to adjust live preview panel width"
           >
@@ -728,14 +462,31 @@ export default function App() {
             setQuickState={setQuickState}
             alertOverlay={alertOverlay}
             onClearAlert={() => setAlertOverlay(null)}
-            onGoNextSlide={handleGoNextSlide}
-            onGoPrevSlide={handleGoPrevSlide}
-            onPushLive={handlePushLive}
+            onGoNextSlide={() => dispatch({ type: 'nextSlide' })}
+            onGoPrevSlide={() => dispatch({ type: 'prevSlide' })}
+            onPushLive={() => dispatch({ type: 'pushActiveSlideLive' })}
             openStageView={() => setActiveViewMode('confidence')}
             activeViewMode={activeViewMode}
             setActiveViewMode={setActiveViewMode}
             customWidth={livePreviewWidth}
           />
+
+          {/* Autosave recovery offer */}
+          {restorable && (
+            <RestoreSessionPrompt
+              savedAt={restorable.savedAt}
+              itemCount={restorable.schedule.length}
+              onRestore={handleRestoreSession}
+              onDismiss={handleDismissRestore}
+            />
+          )}
+
+          {/* Autosave degraded / unavailable */}
+          {persistenceNotice && (
+            <div className="absolute bottom-4 right-4 z-40 max-w-xs px-3.5 py-2.5 rounded-xl bg-slate-900 border border-amber-500/40 text-[11px] font-semibold text-amber-300 shadow-xl">
+              {persistenceNotice}
+            </div>
+          )}
         </main>
       ) : (
         /* Fullscreen Stage Display / Confidence Monitor */
@@ -766,7 +517,7 @@ export default function App() {
         isOpen={isLiveCompanionOpen}
         onClose={() => setIsLiveCompanionOpen(false)}
         onPushSlideToLive={handlePushSlideToLiveDirect}
-        onAddSongItem={handleAddSongItem}
+        onAddSongItem={(item) => dispatch({ type: 'addItem', item })}
         isMicActive={isMicActive}
         setIsMicActive={setIsMicActive}
       />
@@ -781,7 +532,7 @@ export default function App() {
       <SongLibraryModal
         isOpen={isSongModalOpen}
         onClose={() => setIsSongModalOpen(false)}
-        onAddSongItem={handleAddSongItem}
+        onAddSongItem={(item) => dispatch({ type: 'addItem', item })}
         onPushSlideToLive={handlePushSlideToLiveDirect}
         initialQuery={searchInitialQuery}
       />
@@ -791,10 +542,9 @@ export default function App() {
         onClose={() => setIsMediaGenOpen(false)}
         activeSlide={currentItem?.slides[activeSlideIndex] || null}
         onUpdateSlideBg={(bgUrl) => {
-          if (currentItem && currentItem.slides[activeSlideIndex]) {
-            handleUpdateSlide(currentItem.slides[activeSlideIndex].id, {
-              bgImageUrl: bgUrl
-            });
+          const target = currentItem?.slides[activeSlideIndex];
+          if (target) {
+            dispatch({ type: 'updateSlide', slideId: target.id, patch: { bgImageUrl: bgUrl } });
           }
         }}
         initialPrompt={searchInitialQuery}
@@ -816,6 +566,9 @@ export default function App() {
         onPushSlideToLiveDirect={handlePushSlideToLiveDirect}
         openMediaGenerator={() => setIsMediaGenOpen(true)}
       />
+
+      {/* Guard for irreversible schedule/slide deletions */}
+      <ConfirmDialog request={confirmRequest} onClose={() => setConfirmRequest(null)} />
     </div>
   );
 }

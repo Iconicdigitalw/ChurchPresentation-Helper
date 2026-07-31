@@ -72,6 +72,8 @@ export interface AIScriptureSuggestion {
   translation: string;
   sourceSnippet: string;
   keyQuote?: string;
+  /** True when the server returned canned sample content instead of a real AI lookup */
+  isFallback?: boolean;
   timestamp: string;
 }
 

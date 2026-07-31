@@ -80,7 +80,7 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
                 className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold transition-all ${
                   previewMode === 'operator'
                     ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
+                    : 'text-slate-400 hover:text-slate-100'
                 }`}
               >
                 Operator
@@ -90,7 +90,7 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
                 className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold transition-all ${
                   previewMode === 'stage'
                     ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
+                    : 'text-slate-400 hover:text-slate-100'
                 }`}
               >
                 Stage View
@@ -122,7 +122,7 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
         {/* The Actual Display Preview Box (16:9 Aspect Ratio) */}
         {previewMode === 'stage' ? (
           /* Stage / Confidence Monitor Preview Box */
-          <div className={`relative aspect-video w-full rounded-2xl overflow-hidden bg-zinc-950 shadow-2xl flex flex-col justify-between p-3 select-none text-white ${
+          <div className={`relative aspect-video w-full rounded-2xl overflow-hidden bg-zinc-950 shadow-2xl flex flex-col justify-between p-3 select-none text-slate-100 ${
             isLiveOutputOn ? 'border-2 border-rose-500 ring-2 ring-rose-500/30' : 'border border-zinc-800'
           }`}>
             {/* Top Bar */}
@@ -148,7 +148,7 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
                   {liveSlide.header && (
                     <p className="text-[10px] font-black text-amber-400 uppercase tracking-wide">{liveSlide.header}</p>
                   )}
-                  <p className="text-xs font-black text-white leading-snug whitespace-pre-line tracking-tight drop-shadow">
+                  <p className="text-xs font-black text-slate-100 leading-snug whitespace-pre-line tracking-tight drop-shadow">
                     {liveSlide.body}
                   </p>
                 </div>
@@ -176,7 +176,7 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
         ) : (
           /* Main Program Live Output Preview Box */
           <div
-            className={`relative aspect-video w-full rounded-2xl overflow-hidden shadow-2xl transition-all flex flex-col justify-between p-4 ${
+            className={`theme-locked-dark relative aspect-video w-full rounded-2xl overflow-hidden shadow-2xl transition-all flex flex-col justify-between p-4 ${
               isLiveOutputOn
                 ? 'border-2 border-rose-500 ring-2 ring-rose-500/30 shadow-rose-950/50'
                 : 'border border-slate-800'
@@ -201,7 +201,7 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
                 <div className="p-3 rounded-2xl bg-gradient-to-br from-amber-500/20 to-indigo-500/20 border border-amber-500/40 mb-2">
                   <Flame className="w-8 h-8 text-amber-400" />
                 </div>
-                <h2 className="text-base font-extrabold text-white tracking-wider">
+                <h2 className="text-base font-extrabold text-slate-100 tracking-wider">
                   LOGOS CHURCH
                 </h2>
                 <p className="text-[10px] text-slate-400">Welcome to Worship</p>
@@ -222,7 +222,7 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
                     {quickState === 'clearText' ? '' : liveSlide.header}
                   </span>
                   {liveSlide.reference && quickState !== 'clearText' && (
-                    <span className="bg-black/60 px-2 py-0.5 rounded border border-white/10 text-white font-semibold">
+                    <span className="bg-black/60 px-2 py-0.5 rounded border border-white/10 text-slate-100 font-semibold">
                       {liveSlide.reference}
                     </span>
                   )}
@@ -234,7 +234,7 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
                     <p className={`text-sm md:text-base leading-snug drop-shadow-lg whitespace-pre-line ${
                       liveSlide.type === 'scripture' 
                         ? 'font-serif italic font-semibold text-amber-100/95 tracking-wide leading-relaxed' 
-                        : 'font-extrabold text-white'
+                        : 'font-extrabold text-slate-100'
                     }`}>
                       {liveSlide.body}
                     </p>
@@ -264,12 +264,12 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
             {alertOverlay && alertOverlay.show && (
               <div className="absolute bottom-2 left-2 right-2 bg-rose-600 text-white border border-rose-400 p-2.5 rounded-xl shadow-2xl flex items-center justify-between gap-2 z-30 animate-bounce">
                 <div className="flex items-center gap-2 text-xs font-bold">
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-white" />
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-slate-100" />
                   <span>{alertOverlay.message}</span>
                 </div>
                 <button
                   onClick={onClearAlert}
-                  className="text-[10px] bg-black/50 hover:bg-black/80 px-2 py-0.5 rounded font-bold text-white border border-white/20"
+                  className="text-[10px] bg-black/50 hover:bg-black/80 px-2 py-0.5 rounded font-bold text-slate-100 border border-white/20"
                 >
                   Dismiss
                 </button>
@@ -349,14 +349,14 @@ export const LivePreviewPanel: React.FC<LivePreviewPanelProps> = ({
 
           {nextSlide ? (
             <div
-              className={`aspect-video w-full rounded-2xl border border-slate-800 p-3.5 flex flex-col justify-between overflow-hidden shadow-xl opacity-90 ${getThemeClass(
+              className={`theme-locked-dark aspect-video w-full rounded-2xl border border-slate-800 p-3.5 flex flex-col justify-between overflow-hidden shadow-xl opacity-90 ${getThemeClass(
                 nextSlide.themeStyle
               )}`}
             >
               <div className="text-[9px] font-bold text-amber-300 uppercase">
                 {nextSlide.header}
               </div>
-              <div className="text-xs text-white text-center font-semibold line-clamp-3 my-auto drop-shadow">
+              <div className="text-xs text-slate-100 text-center font-semibold line-clamp-3 my-auto drop-shadow">
                 {nextSlide.body}
               </div>
               <div className="text-[9px] text-white/60 text-right font-semibold">

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ScheduleItem, Slide, ThemeStyle } from '../types';
 import { THEME_PRESETS } from '../data/mockData';
 import { getThemeClass } from './SlideGridPanel';
+import { ConfirmDialog, ConfirmRequest } from './ConfirmDialog';
 import { 
   getSavedTemplates, 
   saveCustomTemplate, 
@@ -62,6 +63,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
   const [bulkBgUrl, setBulkBgUrl] = useState('');
   const [savedSuccessNotice, setSavedSuccessNotice] = useState<string | null>(null);
   const [savedTemplates, setSavedTemplates] = useState<CustomTemplate[]>(getSavedTemplates());
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
 
   // Sync state whenever scheduleItem changes
   useEffect(() => {
@@ -126,13 +128,28 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
 
   const handleDeleteSlide = (slideId: string) => {
     if (slides.length <= 1) {
-      alert('A schedule item must contain at least one slide.');
+      setConfirmRequest({
+        title: 'Cannot remove the last slide',
+        message: 'A schedule item must contain at least one slide.',
+        confirmLabel: 'OK',
+        cancelLabel: 'Close',
+        onConfirm: () => undefined
+      });
       return;
     }
-    const updated = slides.filter(s => s.id !== slideId);
-    setSlides(updated);
-    onUpdateScheduleItem(scheduleItem.id, { slides: updated });
-    notifySuccess('Slide removed');
+
+    const slide = slides.find(s => s.id === slideId);
+    setConfirmRequest({
+      title: 'Delete this slide?',
+      message: `"${slide?.header || 'This slide'}" will be removed from "${title}". This cannot be undone.`,
+      confirmLabel: 'Delete slide',
+      onConfirm: () => {
+        const updated = slides.filter(s => s.id !== slideId);
+        setSlides(updated);
+        onUpdateScheduleItem(scheduleItem.id, { slides: updated });
+        notifySuccess('Slide removed');
+      }
+    });
   };
 
   const handleDuplicateSlide = (slide: Slide) => {
@@ -201,9 +218,17 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
 
   const handleDeleteTemplate = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    deleteCustomTemplate(id);
-    setSavedTemplates(getSavedTemplates());
-    notifySuccess('Template removed.');
+    const template = savedTemplates.find(t => t.id === id);
+    setConfirmRequest({
+      title: 'Delete this template?',
+      message: `"${template?.name || 'This template'}" will be removed from your saved templates. This cannot be undone.`,
+      confirmLabel: 'Delete template',
+      onConfirm: () => {
+        deleteCustomTemplate(id);
+        setSavedTemplates(getSavedTemplates());
+        notifySuccess('Template removed.');
+      }
+    });
   };
 
   const handleApplyBgImageToAllSlides = (bgUrl: string) => {
@@ -239,7 +264,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-extrabold text-white truncate">
+                <h2 className="text-base font-extrabold text-slate-100 truncate">
                   {title || 'Untitled Schedule Item'}
                 </h2>
                 <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
@@ -263,7 +288,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
 
             <button
               onClick={onClose}
-              className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
+              className="p-2 text-slate-400 hover:text-slate-100 rounded-xl hover:bg-slate-800 transition-colors"
               title="Close modal"
             >
               <X className="w-5 h-5" />
@@ -285,7 +310,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
             onClick={() => setActiveTab('slides')}
             className={`px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all border-t border-x flex items-center gap-2 ${
               activeTab === 'slides'
-                ? 'bg-slate-900 border-slate-700 text-white border-b-transparent'
+                ? 'bg-slate-900 border-slate-700 text-slate-100 border-b-transparent'
                 : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
             }`}
           >
@@ -326,7 +351,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
                     <Layers className="w-4 h-4 text-indigo-400" />
                     <span>Slide Sequence Manager</span>
                   </h3>
@@ -364,7 +389,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           {/* Slide Mini Thumbnail Preview */}
                           <div
-                            className={`w-16 h-9 rounded-lg border border-white/10 shrink-0 p-1 flex flex-col justify-center text-center overflow-hidden relative ${
+                            className={`theme-locked-dark w-16 h-9 rounded-lg border border-white/10 shrink-0 p-1 flex flex-col justify-center text-center overflow-hidden relative ${
                               slide.bgImageUrl ? 'bg-cover bg-center' : getThemeClass(slide.themeStyle)
                             }`}
                             style={
@@ -383,7 +408,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
                               <span className="text-xs font-black text-slate-400">
                                 #{idx + 1}
                               </span>
-                              <h4 className="text-xs font-bold text-white truncate">
+                              <h4 className="text-xs font-bold text-slate-100 truncate">
                                 {slide.header || 'Untitled Slide'}
                               </h4>
                               {isLive && (
@@ -476,7 +501,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
                                 type="text"
                                 value={slide.header || ''}
                                 onChange={e => handleUpdateSlideField(slide.id, 'header', e.target.value)}
-                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
                                 placeholder="e.g. Verse 1, Point #1, Passage..."
                               />
                             </div>
@@ -489,7 +514,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
                                 type="text"
                                 value={slide.reference || ''}
                                 onChange={e => handleUpdateSlideField(slide.id, 'reference', e.target.value)}
-                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
                                 placeholder="e.g. John 3:16, Key Verse..."
                               />
                             </div>
@@ -503,7 +528,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
                               rows={3}
                               value={slide.body || ''}
                               onChange={e => handleUpdateSlideField(slide.id, 'body', e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
                               placeholder="Enter slide content body..."
                             />
                           </div>
@@ -558,7 +583,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
                     <Palette className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <h4 className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
                       <span>AI Visual Theme Generator</span>
                       <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold uppercase border border-emerald-500/30">
                         Gemini AI
@@ -612,7 +637,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-white truncate">{tpl.name}</span>
+                          <span className="text-xs font-bold text-slate-100 truncate">{tpl.name}</span>
                           {tpl.isBuiltIn && (
                             <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-medium">Built-in</span>
                           )}
@@ -657,7 +682,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
                       onClick={() => handleApplyThemeToAllSlides(preset.id as ThemeStyle)}
                       className={`h-20 rounded-2xl border p-2.5 flex flex-col justify-between text-left transition-all hover:scale-105 shadow-md ${preset.bgClass} border-white/10 hover:border-amber-400`}
                     >
-                      <span className="text-xs font-extrabold text-white drop-shadow">
+                      <span className="text-xs font-extrabold text-slate-100 drop-shadow">
                         {preset.name}
                       </span>
                       <span className="text-[10px] font-semibold text-white/80 bg-black/40 px-2 py-0.5 rounded-md self-start border border-white/10">
@@ -680,7 +705,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
                     value={bulkBgUrl}
                     onChange={e => setBulkBgUrl(e.target.value)}
                     placeholder="https://images.unsplash.com/photo-... (Image URL)"
-                    className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
                   />
                   <button
                     onClick={() => handleApplyBgImageToAllSlides(bulkBgUrl)}
@@ -705,7 +730,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
           {activeTab === 'settings' && (
             <div className="space-y-5 max-w-xl">
               <div>
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
                   <Settings className="w-4 h-4 text-purple-400" />
                   <span>Schedule Entry General Settings</span>
                 </h3>
@@ -723,7 +748,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
                     type="text"
                     value={title}
                     onChange={e => setTitle(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white font-bold focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-bold focus:outline-none focus:border-indigo-500"
                     placeholder="e.g. Worship - Way Maker, Sermon Title..."
                   />
                 </div>
@@ -783,12 +808,7 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
                     <p className="text-[11px] text-slate-500">Permanently remove this item from the active service list.</p>
                   </div>
                   <button
-                    onClick={() => {
-                      if (confirm(`Remove "${title}" from service schedule?`)) {
-                        onDeleteScheduleItem(scheduleItem.id);
-                        onClose();
-                      }
-                    }}
+                    onClick={() => onDeleteScheduleItem(scheduleItem.id)}
                     className="px-3.5 py-2 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -825,6 +845,9 @@ export const ScheduleItemSettingsModal: React.FC<ScheduleItemSettingsModalProps>
         </div>
 
       </div>
+
+      {/* Guard for irreversible slide/template deletions */}
+      <ConfirmDialog request={confirmRequest} onClose={() => setConfirmRequest(null)} />
     </div>
   );
 };

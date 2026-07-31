@@ -12,9 +12,15 @@ import {
   BookOpen, 
   Quote, 
   AlertCircle,
+  AlertTriangle,
   Radio
 } from 'lucide-react';
 import { AIScriptureSuggestion, Slide } from '../types';
+import {
+  FALLBACK_CONTENT_WARNING,
+  describeRequestFailure,
+  readApiErrorMessage
+} from '../utils/apiErrors';
 
 interface AILiveCompanionDrawerProps {
   isOpen: boolean;
@@ -35,6 +41,10 @@ export const AILiveCompanionDrawer: React.FC<AILiveCompanionDrawerProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [suggestions, setSuggestions] = useState<AIScriptureSuggestion[]>([]);
   const [manualSnippet, setManualSnippet] = useState('');
+  // Visible failure text for the live listener call and the browser mic
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // True when the most recent analysis came back as canned sample scripture
+  const [isFallbackResult, setIsFallbackResult] = useState(false);
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
@@ -61,7 +71,7 @@ export const AILiveCompanionDrawer: React.FC<AILiveCompanionDrawerProps> = ({
       };
 
       recognition.onerror = (event: any) => {
-        console.warn('Speech recognition error:', event.error);
+        setErrorMessage(`Microphone listener error: ${event.error || 'unknown speech recognition failure'}.`);
       };
 
       recognitionRef.current = recognition;
@@ -70,7 +80,9 @@ export const AILiveCompanionDrawer: React.FC<AILiveCompanionDrawerProps> = ({
 
   const toggleMic = () => {
     if (!recognitionRef.current) {
-      alert('Speech Recognition is not supported directly in this browser. You can use the Live Speech Simulator text box below to test!');
+      setErrorMessage(
+        'Speech Recognition is not supported in this browser. Use the Live Speech Simulator or the manual snippet box below.'
+      );
       setIsMicActive(true);
       return;
     }
@@ -80,10 +92,14 @@ export const AILiveCompanionDrawer: React.FC<AILiveCompanionDrawerProps> = ({
       setIsMicActive(false);
     } else {
       try {
+        setErrorMessage(null);
         recognitionRef.current.start();
         setIsMicActive(true);
-      } catch (e) {
-        console.error(e);
+      } catch (err) {
+        setIsMicActive(false);
+        setErrorMessage(
+          describeRequestFailure(err, 'Could not start the microphone listener. Check browser mic permissions.')
+        );
       }
     }
   };
@@ -92,6 +108,8 @@ export const AILiveCompanionDrawer: React.FC<AILiveCompanionDrawerProps> = ({
     if (!textToAnalyze.trim() || isProcessing) return;
 
     setIsProcessing(true);
+    setErrorMessage(null);
+
     try {
       const res = await fetch('/api/gemini/live-listener', {
         method: 'POST',
@@ -99,8 +117,14 @@ export const AILiveCompanionDrawer: React.FC<AILiveCompanionDrawerProps> = ({
         body: JSON.stringify({ transcriptSnippet: textToAnalyze })
       });
 
-      if (!res.ok) throw new Error('Live listener analysis failed');
+      if (!res.ok) {
+        throw new Error(await readApiErrorMessage(res, 'Live listener analysis failed.'));
+      }
+
       const data = await res.json();
+      // Server marks canned sample scripture when Gemini is unavailable or errored
+      const isFallback = !!data.isFallback;
+      setIsFallbackResult(isFallback);
 
       if (data.hasScripture && data.scriptureReference && data.scriptureText) {
         const newSuggestion: AIScriptureSuggestion = {
@@ -110,6 +134,7 @@ export const AILiveCompanionDrawer: React.FC<AILiveCompanionDrawerProps> = ({
           translation: data.translation || 'NIV/KJV',
           sourceSnippet: textToAnalyze,
           keyQuote: data.keyQuote,
+          isFallback,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         };
 
@@ -122,12 +147,13 @@ export const AILiveCompanionDrawer: React.FC<AILiveCompanionDrawerProps> = ({
           translation: 'Sermon Quote',
           sourceSnippet: textToAnalyze,
           keyQuote: data.keyQuote,
+          isFallback,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         };
         setSuggestions((prev) => [quoteSuggestion, ...prev]);
       }
     } catch (err) {
-      console.error('Error analyzing live speech:', err);
+      setErrorMessage(describeRequestFailure(err, 'Error analyzing live speech.'));
     } finally {
       setIsProcessing(false);
     }
@@ -163,13 +189,13 @@ export const AILiveCompanionDrawer: React.FC<AILiveCompanionDrawerProps> = ({
             <Radio className="w-4 h-4 animate-pulse text-indigo-400" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-white">AI Live Sermon Companion</h3>
+            <h3 className="text-sm font-bold text-slate-100">AI Live Sermon Companion</h3>
             <p className="text-[10px] text-slate-400">Listens to pastor & suggests scriptures</p>
           </div>
         </div>
         <button
           onClick={onClose}
-          className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+          className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800"
         >
           <X className="w-5 h-5" />
         </button>
@@ -177,6 +203,23 @@ export const AILiveCompanionDrawer: React.FC<AILiveCompanionDrawerProps> = ({
 
       {/* Body Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+        {errorMessage && (
+          <div className="p-3 bg-rose-950/60 border border-rose-800 rounded-xl text-rose-300 text-xs flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
+        {isFallbackResult && (
+          <div className="p-3 bg-amber-950/60 border border-amber-500/40 rounded-xl text-amber-200 text-xs flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <span>
+              <span className="font-extrabold">{FALLBACK_CONTENT_WARNING}</span>{' '}
+              Verse text below may be a placeholder — verify it before pushing to the live output.
+            </span>
+          </div>
+        )}
+
         {/* Mic Control Box */}
         <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-2">
           <div className="flex items-center justify-between">
@@ -258,7 +301,7 @@ export const AILiveCompanionDrawer: React.FC<AILiveCompanionDrawerProps> = ({
               value={manualSnippet}
               onChange={(e) => setManualSnippet(e.target.value)}
               placeholder="e.g. Psalm 91 or Philippians 4:13"
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
               onKeyDown={(e) => e.key === 'Enter' && analyzeSnippet(manualSnippet)}
             />
             <button
@@ -290,7 +333,9 @@ export const AILiveCompanionDrawer: React.FC<AILiveCompanionDrawerProps> = ({
             suggestions.map((sug) => (
               <div
                 key={sug.id}
-                className="p-3 bg-slate-900 border border-indigo-500/40 rounded-xl space-y-2 shadow-lg"
+                className={`p-3 bg-slate-900 border rounded-xl space-y-2 shadow-lg ${
+                  sug.isFallback ? 'border-amber-500/40' : 'border-indigo-500/40'
+                }`}
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-extrabold text-amber-300">
@@ -298,6 +343,13 @@ export const AILiveCompanionDrawer: React.FC<AILiveCompanionDrawerProps> = ({
                   </span>
                   <span className="text-[9px] text-slate-500">{sug.timestamp}</span>
                 </div>
+
+                {sug.isFallback && (
+                  <div className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 inline-flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    <span>SAMPLE — NOT A REAL AI RESULT</span>
+                  </div>
+                )}
 
                 <p className="text-xs text-slate-200 italic leading-snug">
                   {sug.text}

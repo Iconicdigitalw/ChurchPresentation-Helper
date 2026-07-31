@@ -1,4 +1,5 @@
 import express from "express";
+import type { NextFunction, Request, Response } from "express";
 import path from "path";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
@@ -8,7 +9,184 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: "25mb" }));
+// Every /api route carries text only, so a tight body cap is plenty and keeps
+// oversized payloads from ever reaching the JSON parser.
+app.use(express.json({ limit: "1mb" }));
+
+// ===============================================
+// Shared response shapes
+// ===============================================
+type GeneratedSlideType = "title" | "scripture" | "point" | "quote" | "cta" | "outline";
+
+interface GeneratedSlide {
+  type: GeneratedSlideType;
+  header: string;
+  body: string;
+  reference?: string;
+  bulletPoints?: string[];
+  themeStyle: string;
+  speakerNotes?: string;
+}
+
+interface GeneratedDeck {
+  title: string;
+  subtitle: string;
+  themeStyle: string;
+  slides: GeneratedSlide[];
+  isFallback?: boolean;
+}
+
+interface LiveListenerResult {
+  hasScripture: boolean;
+  scriptureReference: string;
+  scriptureText: string;
+  translation: string;
+  hasKeyQuote: boolean;
+  keyQuote: string;
+  topicSummary: string;
+  suggestedSlideHeader: string;
+  suggestedSlideBody: string;
+  isFallback?: boolean;
+}
+
+interface BibleChapterVerse {
+  verseNumber: number;
+  text: string;
+}
+
+interface BibleCrossReference {
+  reference: string;
+  snippet: string;
+}
+
+interface BibleLookupResult {
+  reference: string;
+  book: string;
+  chapter: number;
+  targetVerse: number;
+  translation: string;
+  text: string;
+  chapterVerses: BibleChapterVerse[];
+  crossReferences: BibleCrossReference[];
+  isFallback?: boolean;
+}
+
+interface SongSlide {
+  lines: string[];
+}
+
+interface SongSection {
+  label: string;
+  slides: SongSlide[];
+}
+
+interface FormattedSong {
+  title: string;
+  artist: string;
+  ccliNumber: string;
+  key: string;
+  sections: SongSection[];
+  isFallback?: boolean;
+}
+
+interface OnlineSongResult {
+  id: string;
+  title: string;
+  artist: string;
+  key?: string;
+  ccli?: string;
+  sections: SongSection[];
+  isOnlineResult: true;
+}
+
+// ===============================================
+// Shared scripture reference matcher
+// ===============================================
+const SCRIPTURE_BOOK_PATTERN =
+  "(Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|1 Samuel|2 Samuel|1 Kings|2 Kings|1 Chronicles|2 Chronicles|Ezra|Nehemiah|Esther|Job|Psalms?|Proverbs|Ecclesiastes|Song of Solomon|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|1 Corinthians|2 Corinthians|Galatians|Ephesians|Philippians|Colossians|1 Thessalonians|2 Thessalonians|1 Timothy|2 Timothy|Titus|Philemon|Hebrews|James|1 Peter|2 Peter|1 John|2 John|3 John|Jude|Revelation)";
+
+const SCRIPTURE_REFERENCE_SOURCE = `${SCRIPTURE_BOOK_PATTERN}\\s+\\d+:\\d+(-\\d+)?`;
+
+// Regex objects carry lastIndex state when global, so build a fresh one per use.
+function scriptureReferenceRegex(flags = "i"): RegExp {
+  return new RegExp(SCRIPTURE_REFERENCE_SOURCE, flags);
+}
+
+// ===============================================
+// Rate limiting (in-memory, per client address)
+// ===============================================
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 30;
+
+const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
+
+// Drop expired buckets so the map cannot grow without bound.
+const rateLimitSweeper = setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of rateLimitBuckets) {
+    if (now >= bucket.resetAt) {
+      rateLimitBuckets.delete(key);
+    }
+  }
+}, RATE_LIMIT_WINDOW_MS);
+rateLimitSweeper.unref?.();
+
+function rateLimit(req: Request, res: Response, next: NextFunction) {
+  const key = req.ip || req.socket.remoteAddress || "unknown";
+  const now = Date.now();
+  const bucket = rateLimitBuckets.get(key);
+
+  if (!bucket || now >= bucket.resetAt) {
+    rateLimitBuckets.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return next();
+  }
+
+  if (bucket.count >= RATE_LIMIT_MAX_REQUESTS) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+    res.setHeader("Retry-After", String(retryAfterSeconds));
+    return res.status(429).json({
+      error: `Too many AI requests. Please wait ${retryAfterSeconds}s and try again.`,
+      retryAfter: retryAfterSeconds,
+    });
+  }
+
+  bucket.count += 1;
+  return next();
+}
+
+// ===============================================
+// Request field validation
+// ===============================================
+class ValidationError extends Error {}
+
+// Reads a string body field, enforcing presence and an upper length bound so a
+// single request cannot burn an unbounded amount of the Gemini quota.
+function readStringField(
+  value: unknown,
+  fieldName: string,
+  options: { required?: boolean; maxLength: number },
+): string {
+  const { required = false, maxLength } = options;
+
+  if (value === undefined || value === null || value === "") {
+    if (required) {
+      throw new ValidationError(`${fieldName} is required.`);
+    }
+    return "";
+  }
+
+  if (typeof value !== "string") {
+    throw new ValidationError(`${fieldName} must be a string.`);
+  }
+
+  if (value.length > maxLength) {
+    throw new ValidationError(
+      `${fieldName} is too long (${value.length} characters, maximum ${maxLength}).`,
+    );
+  }
+
+  return value;
+}
 
 // Initialize GenAI safely on server
 function getAiClient() {
@@ -69,7 +247,7 @@ function generateFallbackBackground(stylePrompt?: string, themeName?: string): s
 }
 
 // Heuristic Fallback Sermon Parser
-function fallbackSermonParser(sermonText: string, themeStyle?: string) {
+function fallbackSermonParser(sermonText: string, themeStyle?: string): GeneratedDeck {
   const lines = sermonText
     .split("\n")
     .map((l) => l.trim())
@@ -79,7 +257,7 @@ function fallbackSermonParser(sermonText: string, themeStyle?: string) {
   const subtitle = lines[1] && lines[1].length < 80 ? lines[1] : "Sunday Worship Presentation";
   const theme = themeStyle || "gold-divine";
 
-  const slides: any[] = [
+  const slides: GeneratedSlide[] = [
     {
       type: "title",
       header: title,
@@ -89,8 +267,7 @@ function fallbackSermonParser(sermonText: string, themeStyle?: string) {
     },
   ];
 
-  const scriptureRegex =
-    /(Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|1 Samuel|2 Samuel|1 Kings|2 Kings|1 Chronicles|2 Chronicles|Ezra|Nehemiah|Esther|Job|Psalms?|Proverbs|Ecclesiastes|Song of Solomon|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|1 Corinthians|2 Corinthians|Galatians|Ephesians|Philippians|Colossians|1 Thessalonians|2 Thessalonians|1 Timothy|2 Timothy|Titus|Philemon|Hebrews|James|1 Peter|2 Peter|1 John|2 John|3 John|Jude|Revelation)\s+\d+:\d+(-\d+)?/gi;
+  const scriptureRegex = scriptureReferenceRegex("gi");
 
   const points: string[] = [];
   lines.forEach((line) => {
@@ -178,14 +355,14 @@ function fallbackSermonParser(sermonText: string, themeStyle?: string) {
     subtitle,
     themeStyle: theme,
     slides,
+    isFallback: true,
   };
 }
 
 // Fallback Live Listener
-function fallbackLiveListener(transcriptSnippet: string) {
+function fallbackLiveListener(transcriptSnippet: string): LiveListenerResult {
   const text = transcriptSnippet || "";
-  const scriptureRegex =
-    /(Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|1 Samuel|2 Samuel|1 Kings|2 Kings|1 Chronicles|2 Chronicles|Ezra|Nehemiah|Esther|Job|Psalms?|Proverbs|Ecclesiastes|Song of Solomon|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|1 Corinthians|2 Corinthians|Galatians|Ephesians|Philippians|Colossians|1 Thessalonians|2 Thessalonians|1 Timothy|2 Timothy|Titus|Philemon|Hebrews|James|1 Peter|2 Peter|1 John|2 John|3 John|Jude|Revelation)\s+\d+:\d+(-\d+)?/i;
+  const scriptureRegex = scriptureReferenceRegex("i");
 
   const match = text.match(scriptureRegex);
   const hasScripture = !!match;
@@ -216,24 +393,20 @@ function fallbackLiveListener(transcriptSnippet: string) {
     topicSummary: "Live Sermon Speech Detected",
     suggestedSlideHeader: hasScripture ? `Scripture: ${ref}` : "Live Preaching Highlight",
     suggestedSlideBody: hasScripture ? scriptureText : keyQuote,
+    isFallback: true,
   };
 }
 
 // Fallback Bible Search
-function fallbackBibleSearch(query: string, version?: string) {
+function fallbackBibleSearch(query: string, version?: string): BibleLookupResult {
   const q = (query || "").toLowerCase().trim();
   const v = version || "NIV";
 
-  // Parse Book, Chapter, Verse if possible (e.g., "John 3 16", "John 3:16", "Psalm 23")
-  let book = "John";
-  let chapter = 3;
-  let targetVerseNum = 16;
-
+  // Only a handful of well-known passages are bundled here; anything else falls
+  // through to the default sample below, which is why callers must surface
+  // `isFallback` rather than presenting these as a real lookup.
   if (q.includes("psalm 23") || q.includes("shepherd")) {
-    book = "Psalms";
-    chapter = 23;
-    targetVerseNum = 1;
-    const psalmVerses = [
+    const psalmVerses: BibleChapterVerse[] = [
       { verseNumber: 1, text: "The LORD is my shepherd; I shall not want." },
       { verseNumber: 2, text: "He makes me lie down in green pastures, he leads me beside quiet waters," },
       { verseNumber: 3, text: "he refreshes my soul. He guides me along the right paths for his name's sake." },
@@ -253,14 +426,12 @@ function fallbackBibleSearch(query: string, version?: string) {
         { reference: "John 10:11", snippet: "I am the good shepherd..." },
         { reference: "Isaiah 40:11", snippet: "He tends his flock like a shepherd..." },
       ],
+      isFallback: true,
     };
   }
 
   if (q.includes("romans 8") || q.includes("work for good")) {
-    book = "Romans";
-    chapter = 8;
-    targetVerseNum = 28;
-    const romVerses = [
+    const romVerses: BibleChapterVerse[] = [
       { verseNumber: 26, text: "In the same way, the Spirit helps us in our weakness. We do not know what we ought to pray for, but the Spirit himself intercedes for us through wordless groans." },
       { verseNumber: 27, text: "And he who searches our hearts knows the mind of the Spirit, because the Spirit intercedes for God's people in accordance with the will of God." },
       { verseNumber: 28, text: "And we know that in all things God works for the good of those who love him, who have been called according to his purpose." },
@@ -280,12 +451,13 @@ function fallbackBibleSearch(query: string, version?: string) {
       crossReferences: [
         { reference: "Jeremiah 29:11", snippet: "For I know the plans I have for you..." },
         { reference: "Ephesians 1:11", snippet: "In him we were also chosen..." },
-      ]
+      ],
+      isFallback: true,
     };
   }
 
   // Default / John 3:16 and general matcher
-  const john3Verses = [
+  const john3Verses: BibleChapterVerse[] = [
     { verseNumber: 14, text: "Just as Moses lifted up the snake in the wilderness, so the Son of Man must be lifted up," },
     { verseNumber: 15, text: "that everyone who believes may have eternal life in him." },
     { verseNumber: 16, text: "For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life." },
@@ -308,13 +480,14 @@ function fallbackBibleSearch(query: string, version?: string) {
       { reference: "Romans 5:8", snippet: "But God demonstrates his own love for us in this..." },
       { reference: "1 John 4:9", snippet: "This is how God showed his love among us..." },
     ],
+    isFallback: true,
   };
 }
 
 // Fallback Song Formatter
-function fallbackSongFormatter(rawLyrics: string, title?: string, artist?: string) {
+function fallbackSongFormatter(rawLyrics: string, title?: string, artist?: string): FormattedSong {
   const stanzas = rawLyrics.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
-  const sections: any[] = [];
+  const sections: SongSection[] = [];
 
   stanzas.forEach((stanza, idx) => {
     const lines = stanza.split("\n").map(l => l.trim()).filter(Boolean);
@@ -322,7 +495,7 @@ function fallbackSongFormatter(rawLyrics: string, title?: string, artist?: strin
     if (idx === 1 || stanza.toLowerCase().includes("chorus")) label = "Chorus";
     if (stanza.toLowerCase().includes("bridge")) label = "Bridge";
 
-    const slideChunks: any[] = [];
+    const slideChunks: SongSlide[] = [];
     for (let i = 0; i < lines.length; i += 3) {
       slideChunks.push({
         lines: lines.slice(i, i + 3),
@@ -341,14 +514,29 @@ function fallbackSongFormatter(rawLyrics: string, title?: string, artist?: strin
     ccliNumber: "1234567",
     key: "G Major",
     sections,
+    isFallback: true,
   };
 }
 
 // 1. Convert Sermon Notes to Presentation Deck
-app.post("/api/gemini/convert-sermon", async (req, res) => {
-  const { sermonText, themeStyle, targetSlideCount } = req.body;
-  if (!sermonText || typeof sermonText !== "string") {
-    return res.status(400).json({ error: "Sermon text is required." });
+app.post("/api/gemini/convert-sermon", rateLimit, async (req, res) => {
+  let sermonText: string;
+  let themeStyle: string;
+  let targetSlideCount: string;
+
+  try {
+    sermonText = readStringField(req.body?.sermonText, "Sermon text", {
+      required: true,
+      maxLength: 20_000,
+    });
+    themeStyle = readStringField(req.body?.themeStyle, "Theme style", { maxLength: 100 });
+    targetSlideCount = readStringField(req.body?.targetSlideCount, "Target slide count", {
+      maxLength: 60,
+    });
+  } catch (error) {
+    return res
+      .status(400)
+      .json({ error: error instanceof ValidationError ? error.message : "Invalid request." });
   }
 
   try {
@@ -433,10 +621,18 @@ Return strict JSON format adhering to schema.`;
 });
 
 // 2. Real-time Live Sermon Audio/Speech Transcript Companion
-app.post("/api/gemini/live-listener", async (req, res) => {
-  const { transcriptSnippet } = req.body;
-  if (!transcriptSnippet) {
-    return res.status(400).json({ error: "Transcript snippet required." });
+app.post("/api/gemini/live-listener", rateLimit, async (req, res) => {
+  let transcriptSnippet: string;
+
+  try {
+    transcriptSnippet = readStringField(req.body?.transcriptSnippet, "Transcript snippet", {
+      required: true,
+      maxLength: 4_000,
+    });
+  } catch (error) {
+    return res
+      .status(400)
+      .json({ error: error instanceof ValidationError ? error.message : "Invalid request." });
   }
 
   try {
@@ -488,13 +684,27 @@ Return strict JSON format.`;
 });
 
 // 3. AI Media Generator for Church Presentation Backgrounds
-app.post("/api/gemini/generate-background", async (req, res) => {
-  const { stylePrompt, themeName } = req.body;
+app.post("/api/gemini/generate-background", rateLimit, async (req, res) => {
+  let stylePrompt: string;
+  let themeName: string;
+
+  try {
+    stylePrompt = readStringField(req.body?.stylePrompt, "Style prompt", { maxLength: 600 });
+    themeName = readStringField(req.body?.themeName, "Theme name", { maxLength: 200 });
+  } catch (error) {
+    return res
+      .status(400)
+      .json({ error: error instanceof ValidationError ? error.message : "Invalid request." });
+  }
 
   try {
     const ai = getAiClient();
     if (!ai) {
-      return res.json({ imageUrl: generateFallbackBackground(stylePrompt, themeName), prompt: stylePrompt || themeName });
+      return res.json({
+        imageUrl: generateFallbackBackground(stylePrompt, themeName),
+        prompt: stylePrompt || themeName,
+        isFallback: true,
+      });
     }
 
     const fullPrompt = `A high quality, atmospheric worship presentation background graphic for a church screen display. ${stylePrompt || themeName || "Majestic gold and deep dark blue subtle light rays, subtle cross accent, elegant particle glow, motion blur texture"}. No text on the image, clean widescreen 16:9 composition.`;
@@ -522,7 +732,11 @@ app.post("/api/gemini/generate-background", async (req, res) => {
     }
 
     if (!imageUrl) {
-      imageUrl = generateFallbackBackground(stylePrompt, themeName);
+      return res.json({
+        imageUrl: generateFallbackBackground(stylePrompt, themeName),
+        prompt: fullPrompt,
+        isFallback: true,
+      });
     }
 
     res.json({ imageUrl, prompt: fullPrompt });
@@ -531,15 +745,23 @@ app.post("/api/gemini/generate-background", async (req, res) => {
     res.json({
       imageUrl: generateFallbackBackground(stylePrompt, themeName),
       prompt: stylePrompt || themeName || "Worship Atmosphere Background",
+      isFallback: true,
     });
   }
 });
 
 // 4. AI Bible Quick Search & Explanation
-app.post("/api/gemini/bible-search", async (req, res) => {
-  const { query, version } = req.body;
-  if (!query) {
-    return res.status(400).json({ error: "Query is required." });
+app.post("/api/gemini/bible-search", rateLimit, async (req, res) => {
+  let query: string;
+  let version: string;
+
+  try {
+    query = readStringField(req.body?.query, "Query", { required: true, maxLength: 300 });
+    version = readStringField(req.body?.version, "Version", { maxLength: 40 });
+  } catch (error) {
+    return res
+      .status(400)
+      .json({ error: error instanceof ValidationError ? error.message : "Invalid request." });
   }
 
   try {
@@ -591,10 +813,22 @@ Return JSON with exact book, chapter, verse numbers, full scripture text, and 2-
 });
 
 // 5. AI Worship Song Auto-Structure & Lyric Formatter
-app.post("/api/gemini/song-formatter", async (req, res) => {
-  const { rawLyrics, title, artist } = req.body;
-  if (!rawLyrics) {
-    return res.status(400).json({ error: "Lyrics required." });
+app.post("/api/gemini/song-formatter", rateLimit, async (req, res) => {
+  let rawLyrics: string;
+  let title: string;
+  let artist: string;
+
+  try {
+    rawLyrics = readStringField(req.body?.rawLyrics, "Lyrics", {
+      required: true,
+      maxLength: 20_000,
+    });
+    title = readStringField(req.body?.title, "Title", { maxLength: 200 });
+    artist = readStringField(req.body?.artist, "Artist", { maxLength: 200 });
+  } catch (error) {
+    return res
+      .status(400)
+      .json({ error: error instanceof ValidationError ? error.message : "Invalid request." });
   }
 
   try {
@@ -663,9 +897,18 @@ Group the lines into slide parts (Verse 1, Verse 2, Chorus, Chorus 2, Bridge, Ta
 });
 
 // 6. Live Online Web Search for Worship Songs & Lyrics
-app.post("/api/gemini/song-search-online", async (req, res) => {
-  const { query } = req.body;
-  if (!query || typeof query !== "string" || !query.trim()) {
+app.post("/api/gemini/song-search-online", rateLimit, async (req, res) => {
+  let query: string;
+
+  try {
+    query = readStringField(req.body?.query, "Query", { maxLength: 300 });
+  } catch (error) {
+    return res
+      .status(400)
+      .json({ error: error instanceof ValidationError ? error.message : "Invalid request." });
+  }
+
+  if (!query.trim()) {
     return res.json({ results: [] });
   }
 
@@ -674,7 +917,7 @@ app.post("/api/gemini/song-search-online", async (req, res) => {
   try {
     const ai = getAiClient();
     if (!ai) {
-      // Fallback dynamic generator if AI key not present
+      // Placeholder structure only - no real song is being reproduced here.
       const fallbackResult = {
         id: `online-song-${Date.now()}`,
         title: cleanQuery.replace(/\b\w/g, c => c.toUpperCase()),
@@ -701,7 +944,7 @@ app.post("/api/gemini/song-search-online", async (req, res) => {
           }
         ]
       };
-      return res.json({ results: [fallbackResult] });
+      return res.json({ results: [fallbackResult], isFallback: true });
     }
 
     const prompt = `Perform a live web lookup for authentic, full Christian worship song lyrics for the search query: "${cleanQuery}".
@@ -763,16 +1006,21 @@ Return strict JSON format.`;
     });
 
     const parsed = JSON.parse(response.text || "{}");
-    const formattedResults = (parsed.results || []).map((item: any, idx: number) => ({
+    const rawResults: Array<Partial<OnlineSongResult>> = parsed.results || [];
+    const formattedResults: OnlineSongResult[] = rawResults.map((item, idx) => ({
       ...item,
       id: item.id || `online-song-${Date.now()}-${idx}`,
-      isOnlineResult: true
+      title: item.title || cleanQuery,
+      artist: item.artist || "Unknown",
+      sections: item.sections || [],
+      isOnlineResult: true,
     }));
 
     res.json({ results: formattedResults });
   } catch (error: any) {
     console.warn("Error searching online songs via Gemini:", error?.message || error);
-    res.json({ results: [] });
+    // Distinguish a failed search from a genuinely empty one so the UI can say so.
+    res.json({ results: [], searchFailed: true });
   }
 });
 

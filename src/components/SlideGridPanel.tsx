@@ -164,7 +164,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
       <div className="p-3.5 border-b border-slate-800 bg-slate-900 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-lg">
         <div>
           <div className="flex items-center gap-2.5">
-            <h2 className="text-base font-extrabold text-white tracking-tight">
+            <h2 className="text-base font-extrabold text-slate-100 tracking-tight">
               {currentItem.title}
             </h2>
             <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
@@ -184,7 +184,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
               className={`p-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 ${
                 layoutMode === 'grid'
                   ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
               }`}
               title="Grid View"
             >
@@ -196,7 +196,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
               className={`p-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 ${
                 layoutMode === 'list'
                   ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
               }`}
               title="List View"
             >
@@ -213,7 +213,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
                 className={`px-2 py-1 rounded-lg text-[10px] font-extrabold transition-colors ${
                   thumbnailSize === 'small'
                     ? 'bg-slate-800 text-amber-300 border border-amber-500/30'
-                    : 'text-slate-400 hover:text-white'
+                    : 'text-slate-400 hover:text-slate-100'
                 }`}
                 title="Small Thumbnails (Zoom Out)"
               >
@@ -224,7 +224,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
                 className={`px-2 py-1 rounded-lg text-[10px] font-extrabold transition-colors ${
                   thumbnailSize === 'medium'
                     ? 'bg-slate-800 text-amber-300 border border-amber-500/30'
-                    : 'text-slate-400 hover:text-white'
+                    : 'text-slate-400 hover:text-slate-100'
                 }`}
                 title="Medium Thumbnails"
               >
@@ -235,7 +235,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
                 className={`px-2 py-1 rounded-lg text-[10px] font-extrabold transition-colors ${
                   thumbnailSize === 'large'
                     ? 'bg-slate-800 text-amber-300 border border-amber-500/30'
-                    : 'text-slate-400 hover:text-white'
+                    : 'text-slate-400 hover:text-slate-100'
                 }`}
                 title="Large Thumbnails (Zoom In)"
               >
@@ -253,7 +253,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
             <Check className="w-4 h-4 text-emerald-400" />
             <span>{appliedNotice}</span>
           </span>
-          <button onClick={() => setAppliedNotice(null)} className="text-emerald-400 hover:text-white">
+          <button onClick={() => setAppliedNotice(null)} className="text-emerald-400 hover:text-slate-100">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -285,7 +285,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
                   <div
                     onClick={() => handleSlideThumbnailClick(idx)}
                     onDoubleClick={() => handleSlideThumbnailDoubleClick(idx)}
-                    className={`relative aspect-video w-full cursor-pointer select-none overflow-hidden rounded-2xl p-2 sm:p-2.5 flex flex-col justify-between ${
+                    className={`theme-locked-dark relative aspect-video w-full cursor-pointer select-none overflow-hidden rounded-2xl p-2 sm:p-2.5 flex flex-col justify-between ${
                       slide.bgImageUrl ? 'bg-cover bg-center' : getThemeClass(slide.themeStyle)
                     }`}
                     style={
@@ -306,7 +306,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
                         {slide.header}
                       </span>
                       {slide.reference && (
-                        <span className="bg-black/60 px-1.5 py-0.5 rounded border border-white/10 text-white font-semibold text-[8px] xs:text-[9px] shrink-0">
+                        <span className="bg-black/60 px-1.5 py-0.5 rounded border border-white/10 text-slate-100 font-semibold text-[8px] xs:text-[9px] shrink-0">
                           {slide.reference}
                         </span>
                       )}
@@ -314,7 +314,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
 
                     {/* Middle Row: Main Slide Text Body & Bullet Points - Identical to Live Screen */}
                     <div className="relative z-10 my-auto text-center px-2 py-0.5 flex flex-col items-center justify-center max-h-[70%] overflow-hidden">
-                      <p className={`${slide.type === 'scripture' ? 'font-serif italic text-amber-100 font-semibold' : `${fontClasses.body} font-extrabold text-white`} leading-snug drop-shadow-lg whitespace-pre-line break-words max-w-full`}>
+                      <p className={`${slide.type === 'scripture' ? 'font-serif italic text-amber-100 font-semibold' : `${fontClasses.body} font-extrabold text-slate-100`} leading-snug drop-shadow-lg whitespace-pre-line break-words max-w-full`}>
                         {slide.body}
                       </p>
                       {slide.bulletPoints && slide.bulletPoints.length > 0 && (
@@ -336,7 +336,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
 
                     {/* Floating Overlay Badge (Top-Left): Slide Index Number */}
                     <div className="absolute top-1.5 left-1.5 z-20 pointer-events-none">
-                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-black/80 text-white border border-white/20 shadow-md">
+                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-black/80 text-slate-100 border border-white/20 shadow-md">
                         #{idx + 1}
                       </span>
                     </div>
@@ -383,7 +383,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
                           type="text"
                           value={editHeader}
                           onChange={e => setEditHeader(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-indigo-500"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
                         />
                       </div>
                       <div>
@@ -392,7 +392,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
                           rows={3}
                           value={editBody}
                           onChange={e => setEditBody(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-indigo-500"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
                         />
                       </div>
                       <div>
@@ -401,7 +401,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
                           type="text"
                           value={editReference}
                           onChange={e => setEditReference(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-indigo-500"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
                         />
                       </div>
                       <div>
@@ -416,7 +416,7 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
                       <div className="flex justify-end gap-2 pt-1">
                         <button
                           onClick={() => setEditingSlideId(null)}
-                          className="px-2.5 py-1 text-slate-400 hover:text-white text-xs"
+                          className="px-2.5 py-1 text-slate-400 hover:text-slate-100 text-xs"
                         >
                           Cancel
                         </button>
@@ -462,16 +462,16 @@ export const SlideGridPanel: React.FC<SlideGridPanelProps> = ({
 
                     {/* Mini Thumbnail Preview */}
                     <div
-                      className={`w-32 aspect-video shrink-0 rounded-xl overflow-hidden p-2 flex flex-col justify-between border border-white/10 shadow relative ${
+                      className={`theme-locked-dark w-32 aspect-video shrink-0 rounded-xl overflow-hidden p-2 flex flex-col justify-between border border-white/10 shadow relative ${
                         slide.bgImageUrl ? 'bg-cover bg-center' : getThemeClass(slide.themeStyle)
                       }`}
                       style={slide.bgImageUrl ? { backgroundImage: `url(${slide.bgImageUrl})` } : undefined}
                     >
                       {slide.bgImageUrl && <div className="absolute inset-0 bg-black/40" />}
-                      <span className="relative z-10 text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-black/60 text-white self-start">
+                      <span className="relative z-10 text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-black/60 text-slate-100 self-start">
                         {slide.type}
                       </span>
-                      <p className="relative z-10 text-[8px] font-bold text-white text-center truncate drop-shadow">
+                      <p className="relative z-10 text-[8px] font-bold text-slate-100 text-center truncate drop-shadow">
                         {slide.header || slide.body}
                       </p>
                     </div>

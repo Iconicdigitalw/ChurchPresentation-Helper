@@ -11,8 +11,15 @@ import {
   Trash2, 
   Check, 
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  AlertCircle,
+  AlertTriangle
 } from 'lucide-react';
+import {
+  FALLBACK_CONTENT_WARNING,
+  describeRequestFailure,
+  readApiErrorMessage
+} from '../utils/apiErrors';
 import { PRESET_SONGS } from '../data/mockData';
 import { ScheduleItem, SongItem, Slide } from '../types';
 import { 
@@ -65,6 +72,18 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
   const [isSearchingOnline, setIsSearchingOnline] = useState(false);
   const [savedSuccessId, setSavedSuccessId] = useState<string | null>(null);
 
+  // Honest reporting of AI/network state for both fetch calls in this modal
+  const [searchErrorMessage, setSearchErrorMessage] = useState<string | null>(null);
+  // Distinguishes "the lookup errored" from "no songs matched"
+  const [searchFailed, setSearchFailed] = useState(false);
+  // Only claim "no songs found" once a lookup has actually completed
+  const [hasSearchedOnline, setHasSearchedOnline] = useState(false);
+  // Online results are canned sample lyrics, not a genuine web lookup
+  const [onlineResultsAreFallback, setOnlineResultsAreFallback] = useState(false);
+  const [formatErrorMessage, setFormatErrorMessage] = useState<string | null>(null);
+  // Formatted song awaiting explicit operator confirmation because it is sample content
+  const [pendingFallbackSong, setPendingFallbackSong] = useState<ScheduleItem | null>(null);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -109,23 +128,49 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
       }, 600);
     } else {
       setOnlineResults([]);
+      setSearchErrorMessage(null);
+      setSearchFailed(false);
+      setOnlineResultsAreFallback(false);
+      setHasSearchedOnline(false);
     }
   };
 
   const triggerLiveOnlineSearch = async (queryText: string) => {
     if (!queryText.trim()) return;
     setIsSearchingOnline(true);
+    setSearchErrorMessage(null);
+    setSearchFailed(false);
+    setOnlineResultsAreFallback(false);
+    setHasSearchedOnline(false);
+
     try {
       const res = await fetch('/api/gemini/song-search-online', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: queryText })
       });
-      if (!res.ok) throw new Error('Failed to search online songs');
+
+      if (!res.ok) {
+        throw new Error(await readApiErrorMessage(res, 'Failed to search online songs.'));
+      }
+
       const data = await res.json();
+
+      setHasSearchedOnline(true);
+
+      // The lookup errored server-side — this is NOT an empty result set
+      if (data.searchFailed) {
+        setOnlineResults([]);
+        setSearchFailed(true);
+        return;
+      }
+
       setOnlineResults(data.results || []);
-    } catch (e) {
-      console.error('Error fetching online lyrics:', e);
+      // Server marks canned sample lyrics when Gemini is unavailable or errored
+      setOnlineResultsAreFallback(!!data.isFallback);
+    } catch (err) {
+      setOnlineResults([]);
+      setSearchErrorMessage(describeRequestFailure(err, 'Online song search failed.'));
     } finally {
       setIsSearchingOnline(false);
     }
@@ -208,10 +253,50 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
     setCustomCatalog(getSavedCustomSongs());
   };
 
+  /** Inserts the operator's own pasted lyrics as a single slide, with no AI involved. */
+  const handleInsertRawLyricsSlide = () => {
+    const fallbackItem: ScheduleItem = {
+      id: `song-fallback-${Date.now()}`,
+      title: songTitle || 'Worship Song',
+      subtitle: artist,
+      type: 'song',
+      activeSlideIndex: 0,
+      slides: [
+        {
+          id: `s-${Date.now()}`,
+          type: 'song',
+          header: songTitle || 'Song Lyrics',
+          body: rawLyrics,
+          themeStyle: 'purple-majesty'
+        }
+      ]
+    };
+    onAddSongItem(fallbackItem);
+    onClose();
+  };
+
+  /** Operator explicitly accepted the sample-content formatting after seeing the warning. */
+  const handleConfirmPendingFallbackSong = () => {
+    if (!pendingFallbackSong) return;
+    saveCustomSongToCatalog({
+      id: `custom-song-${Date.now()}`,
+      title: pendingFallbackSong.title.replace(/^Worship:\s*/, ''),
+      artist: pendingFallbackSong.subtitle || 'Custom Song',
+      key: pendingFallbackSong.key || songKey,
+      ccli: pendingFallbackSong.ccli,
+      slides: pendingFallbackSong.slides
+    });
+    onAddSongItem(pendingFallbackSong);
+    onClose();
+  };
+
   const handleFormatLyricsWithAI = async () => {
     if (!rawLyrics.trim()) return;
 
     setIsLoading(true);
+    setFormatErrorMessage(null);
+    setPendingFallbackSong(null);
+
     try {
       const res = await fetch('/api/gemini/song-formatter', {
         method: 'POST',
@@ -223,7 +308,10 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
         })
       });
 
-      if (!res.ok) throw new Error('Failed to format song lyrics.');
+      if (!res.ok) {
+        throw new Error(await readApiErrorMessage(res, 'Failed to format song lyrics.'));
+      }
+
       const data = await res.json();
 
       const generatedSlides: Slide[] = [];
@@ -250,16 +338,6 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
         }
       ];
 
-      // Save to catalog automatically for future reuse
-      saveCustomSongToCatalog({
-        id: `custom-song-${Date.now()}`,
-        title: songTitle || data.title || 'Custom Song',
-        artist: artist || 'Custom Song',
-        key: songKey,
-        ccli: ccli || data.ccliNumber,
-        slides: slidesToUse
-      });
-
       const newItem: ScheduleItem = {
         id: `custom-song-item-${Date.now()}`,
         title: `Worship: ${songTitle || data.title || 'Custom Song'}`,
@@ -271,30 +349,28 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
         slides: slidesToUse
       };
 
+      // Never auto-insert sample content — make the operator confirm it first
+      if (data.isFallback) {
+        setPendingFallbackSong(newItem);
+        return;
+      }
+
+      // Save to catalog automatically for future reuse
+      saveCustomSongToCatalog({
+        id: `custom-song-${Date.now()}`,
+        title: songTitle || data.title || 'Custom Song',
+        artist: artist || 'Custom Song',
+        key: songKey,
+        ccli: ccli || data.ccliNumber,
+        slides: slidesToUse
+      });
+
       onAddSongItem(newItem);
       onClose();
     } catch (err) {
-      console.error(err);
-      alert('Error formatting song. Inserting raw lyrics slide.');
-      const fallbackSlides: Slide[] = [
-        {
-          id: `s-${Date.now()}`,
-          type: 'song',
-          header: songTitle || 'Song Lyrics',
-          body: rawLyrics,
-          themeStyle: 'purple-majesty'
-        }
-      ];
-      const fallbackItem: ScheduleItem = {
-        id: `song-fallback-${Date.now()}`,
-        title: songTitle || 'Worship Song',
-        subtitle: artist,
-        type: 'song',
-        activeSlideIndex: 0,
-        slides: fallbackSlides
-      };
-      onAddSongItem(fallbackItem);
-      onClose();
+      setFormatErrorMessage(
+        describeRequestFailure(err, 'Error formatting song lyrics. Nothing was added to the schedule.')
+      );
     } finally {
       setIsLoading(false);
     }
@@ -312,11 +388,11 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
               <Music className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">Worship Songs Catalog & Live Web Search</h2>
+              <h2 className="text-base font-bold text-slate-100">Worship Songs Catalog & Live Web Search</h2>
               <p className="text-xs text-slate-400">Search saved library & pull live lyrics from free online lyrics databases simultaneously</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800">
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -360,7 +436,7 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
                   onChange={(e) => handleSearchChange(e.target.value)}
                   onFocus={(e) => e.target.select()}
                   placeholder="Type song title or artist (e.g. 'Way Maker', 'Goodness of God', 'Gratitude')..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 shadow-inner font-medium"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-purple-500 shadow-inner font-medium"
                 />
               </div>
 
@@ -368,7 +444,7 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
                 type="button"
                 onClick={() => triggerLiveOnlineSearch(searchQuery || 'Goodness of God')}
                 disabled={isSearchingOnline}
-                className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shrink-0 shadow-md transition-all cursor-pointer"
+                className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-slate-100 font-bold text-xs rounded-xl flex items-center gap-1.5 shrink-0 shadow-md transition-all cursor-pointer"
               >
                 {isSearchingOnline ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -395,7 +471,7 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
                       >
                         <div>
                           <div className="flex items-center gap-2">
-                            <h4 className="text-xs font-bold text-white">{song.title}</h4>
+                            <h4 className="text-xs font-bold text-slate-100">{song.title}</h4>
                             <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
                               SAVED
                             </span>
@@ -441,7 +517,7 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
                       className="p-3 bg-slate-950 border border-slate-800/80 hover:border-slate-700 rounded-xl flex items-center justify-between gap-3 transition-all"
                     >
                       <div>
-                        <h4 className="text-xs font-bold text-white">{song.title}</h4>
+                        <h4 className="text-xs font-bold text-slate-100">{song.title}</h4>
                         <p className="text-[11px] text-slate-400 mt-0.5">
                           {song.artist} • {song.slides.length} slides
                           {song.key ? ` • Key: ${song.key}` : ''}
@@ -471,6 +547,23 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
                   <span className="text-[10px] text-slate-500">Auto-pulls lyrics & converts for future reuse</span>
                 </div>
 
+                {searchErrorMessage && (
+                  <div className="mb-2 p-3 bg-rose-950/60 border border-rose-800 rounded-xl text-rose-300 text-xs flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <span>{searchErrorMessage}</span>
+                  </div>
+                )}
+
+                {onlineResultsAreFallback && !isSearchingOnline && (
+                  <div className="mb-2 p-3 bg-amber-950/60 border border-amber-500/40 rounded-xl text-amber-200 text-xs flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <span>
+                      <span className="font-extrabold">{FALLBACK_CONTENT_WARNING}</span>{' '}
+                      The lyrics below are generic placeholder text, not a real web lookup.
+                    </span>
+                  </div>
+                )}
+
                 {isSearchingOnline ? (
                   <div className="p-6 bg-slate-950/60 border border-slate-800 rounded-xl text-center space-y-2">
                     <Loader2 className="w-6 h-6 animate-spin text-emerald-400 mx-auto" />
@@ -482,15 +575,26 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
                     {onlineResults.map((onlineSong) => (
                       <div
                         key={onlineSong.id}
-                        className="p-3.5 bg-slate-950 border border-emerald-500/40 hover:border-emerald-500/80 rounded-xl space-y-2.5 transition-all shadow-md"
+                        className={`p-3.5 bg-slate-950 border rounded-xl space-y-2.5 transition-all shadow-md ${
+                          onlineResultsAreFallback
+                            ? 'border-amber-500/40 hover:border-amber-500/80'
+                            : 'border-emerald-500/40 hover:border-emerald-500/80'
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <div className="flex items-center gap-2">
-                              <h4 className="text-xs font-bold text-white">{onlineSong.title}</h4>
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                                ⚡ ONLINE WEB RESULT
-                              </span>
+                              <h4 className="text-xs font-bold text-slate-100">{onlineSong.title}</h4>
+                              {onlineResultsAreFallback ? (
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  <span>SAMPLE — NOT A REAL AI RESULT</span>
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                  ⚡ ONLINE WEB RESULT
+                                </span>
+                              )}
                             </div>
                             <p className="text-[11px] text-slate-400 mt-0.5">
                               {onlineSong.artist} • Key: {onlineSong.key || 'G'}
@@ -543,6 +647,27 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
                       </div>
                     ))}
                   </div>
+                ) : searchFailed ? (
+                  <div className="p-4 bg-rose-950/60 border border-rose-800 rounded-xl text-rose-300 text-xs flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1.5">
+                      <p className="font-bold">
+                        Online lyrics search failed — this is not an empty result.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => triggerLiveOnlineSearch(searchQuery)}
+                        disabled={!searchQuery.trim()}
+                        className="px-3 py-1.5 bg-rose-900 hover:bg-rose-800 text-rose-100 font-bold text-xs rounded-lg disabled:opacity-50"
+                      >
+                        Retry Search
+                      </button>
+                    </div>
+                  </div>
+                ) : hasSearchedOnline && !searchErrorMessage ? (
+                  <div className="p-4 bg-slate-950/40 border border-slate-800/60 rounded-xl text-center text-slate-500 text-xs">
+                    No online songs found for "{searchQuery}". Try a different title or artist.
+                  </div>
                 ) : (
                   <div className="p-4 bg-slate-950/40 border border-slate-800/60 rounded-xl text-center text-slate-500 text-xs">
                     Type a song title above or click "Search Online Web" to search free online lyrics.
@@ -554,6 +679,51 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
         ) : (
           /* Custom Song AI Form */
           <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+            {formatErrorMessage && (
+              <div className="p-3 bg-rose-950/60 border border-rose-800 rounded-xl text-rose-300 text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <div className="space-y-1.5">
+                  <p>{formatErrorMessage}</p>
+                  <button
+                    type="button"
+                    onClick={handleInsertRawLyricsSlide}
+                    className="px-3 py-1.5 bg-rose-900 hover:bg-rose-800 text-rose-100 font-bold text-xs rounded-lg"
+                  >
+                    Insert My Raw Lyrics As One Slide Instead
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {pendingFallbackSong && (
+              <div className="p-3 bg-amber-950/60 border border-amber-500/40 rounded-xl text-amber-200 text-xs flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1.5">
+                  <p>
+                    <span className="font-extrabold">{FALLBACK_CONTENT_WARNING}</span>{' '}
+                    These {pendingFallbackSong.slides.length} slides were split by a basic non-AI rule,
+                    so section labels may be wrong. Review them before using live.
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleConfirmPendingFallbackSong}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs rounded-lg"
+                    >
+                      Add Sample Slides Anyway
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPendingFallbackSong(null)}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-lg"
+                    >
+                      Discard
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
               <div>
                 <label className="text-[10px] font-semibold text-slate-400">Song Title</label>
@@ -562,7 +732,7 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
                   value={songTitle}
                   onChange={(e) => setSongTitle(e.target.value)}
                   placeholder="e.g. Holy Forever"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white focus:outline-none focus:border-purple-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-100 focus:outline-none focus:border-purple-500"
                 />
               </div>
               <div>
@@ -572,7 +742,7 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
                   value={artist}
                   onChange={(e) => setArtist(e.target.value)}
                   placeholder="e.g. Chris Tomlin"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white focus:outline-none focus:border-purple-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-100 focus:outline-none focus:border-purple-500"
                 />
               </div>
               <div>
@@ -583,14 +753,14 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
                     value={songKey}
                     onChange={(e) => setSongKey(e.target.value)}
                     placeholder="Key (e.g. G)"
-                    className="bg-slate-950 border border-slate-800 rounded-lg p-2 text-white text-center focus:outline-none focus:border-purple-500"
+                    className="bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-100 text-center focus:outline-none focus:border-purple-500"
                   />
                   <input
                     type="text"
                     value={ccli}
                     onChange={(e) => setCcli(e.target.value)}
                     placeholder="CCLI #"
-                    className="bg-slate-950 border border-slate-800 rounded-lg p-2 text-white text-center focus:outline-none focus:border-purple-500"
+                    className="bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-100 text-center focus:outline-none focus:border-purple-500"
                   />
                 </div>
               </div>
@@ -606,18 +776,18 @@ export const SongLibraryModal: React.FC<SongLibraryModalProps> = ({
                 value={rawLyrics}
                 onChange={(e) => setRawLyrics(e.target.value)}
                 placeholder="Paste lyrics here..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-purple-500 leading-relaxed custom-scrollbar"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-100 focus:outline-none focus:border-purple-500 leading-relaxed custom-scrollbar"
               />
             </div>
 
             <button
               onClick={handleFormatLyricsWithAI}
               disabled={isLoading || !rawLyrics.trim()}
-              className="w-full py-2.5 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-purple-950/50 cursor-pointer"
+              className="w-full py-2.5 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-slate-100 font-bold text-xs rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-purple-950/50 cursor-pointer"
             >
               {isLoading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <Loader2 className="w-4 h-4 animate-spin text-slate-100" />
                   <span>Formatting Lyrics & Saving Song...</span>
                 </>
               ) : (

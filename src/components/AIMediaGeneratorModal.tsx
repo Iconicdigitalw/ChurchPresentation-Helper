@@ -6,8 +6,14 @@ import {
   Loader2, 
   Check, 
   Image as ImageIcon,
-  RefreshCw
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
+import {
+  FALLBACK_CONTENT_WARNING,
+  describeRequestFailure,
+  readApiErrorMessage
+} from '../utils/apiErrors';
 
 interface AIMediaGeneratorModalProps {
   isOpen: boolean;
@@ -28,6 +34,8 @@ export const AIMediaGeneratorModal: React.FC<AIMediaGeneratorModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // True when the server answered with canned sample media instead of a real generation
+  const [isFallbackResult, setIsFallbackResult] = useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   React.useEffect(() => {
@@ -68,6 +76,7 @@ export const AIMediaGeneratorModal: React.FC<AIMediaGeneratorModalProps> = ({
 
     setIsLoading(true);
     setErrorMessage(null);
+    setIsFallbackResult(false);
 
     try {
       const res = await fetch('/api/gemini/generate-background', {
@@ -77,17 +86,20 @@ export const AIMediaGeneratorModal: React.FC<AIMediaGeneratorModalProps> = ({
       });
 
       if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Failed to generate background image.');
+        throw new Error(await readApiErrorMessage(res, 'Failed to generate background image.'));
       }
 
       const data = await res.json();
-      if (data.imageUrl) {
-        setGeneratedImageUrl(data.imageUrl);
+      if (!data.imageUrl) {
+        throw new Error('The AI returned no image. Please adjust the prompt and try again.');
       }
-    } catch (err: any) {
-      console.error('Image generation error:', err);
-      setErrorMessage(err.message || 'Image generation failed.');
+
+      setGeneratedImageUrl(data.imageUrl);
+      // Server marks placeholder media when Gemini is unavailable or errored
+      setIsFallbackResult(!!data.isFallback);
+    } catch (err) {
+      setGeneratedImageUrl(null);
+      setErrorMessage(describeRequestFailure(err, 'Image generation failed.'));
     } finally {
       setIsLoading(false);
     }
@@ -109,11 +121,11 @@ export const AIMediaGeneratorModal: React.FC<AIMediaGeneratorModalProps> = ({
               <Sparkles className="w-5 h-5 animate-pulse" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">AI Worship Background Generator</h2>
+              <h2 className="text-base font-bold text-slate-100">AI Worship Background Generator</h2>
               <p className="text-xs text-slate-400">Create custom 16:9 widescreen presentation media with Gemini</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800">
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -123,6 +135,16 @@ export const AIMediaGeneratorModal: React.FC<AIMediaGeneratorModalProps> = ({
           {errorMessage && (
             <div className="p-3 bg-rose-950 border border-rose-800 text-rose-200 text-xs rounded-xl">
               {errorMessage}
+            </div>
+          )}
+
+          {isFallbackResult && (
+            <div className="p-3 bg-amber-950/60 border border-amber-500/40 text-amber-200 text-xs rounded-xl flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <span>
+                <span className="font-extrabold">{FALLBACK_CONTENT_WARNING}</span>{' '}
+                This graphic is a generic placeholder, not a render of your prompt.
+              </span>
             </div>
           )}
 
@@ -155,7 +177,7 @@ export const AIMediaGeneratorModal: React.FC<AIMediaGeneratorModalProps> = ({
               rows={3}
               value={stylePrompt}
               onChange={(e) => setStylePrompt(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-500 leading-relaxed shadow-inner"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-100 focus:outline-none focus:border-amber-500 leading-relaxed shadow-inner"
             />
           </div>
 
@@ -180,7 +202,15 @@ export const AIMediaGeneratorModal: React.FC<AIMediaGeneratorModalProps> = ({
           {/* Generated Image Preview */}
           {generatedImageUrl && (
             <div className="space-y-3 pt-2">
-              <label className="text-xs font-bold text-amber-300">Generated Widescreen Media</label>
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-bold text-amber-300">Generated Widescreen Media</label>
+                {isFallbackResult && (
+                  <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    <span>SAMPLE — NOT A REAL AI RESULT</span>
+                  </span>
+                )}
+              </div>
               <div className="aspect-video w-full rounded-xl overflow-hidden border-2 border-amber-500/60 shadow-2xl relative">
                 <img
                   src={generatedImageUrl}

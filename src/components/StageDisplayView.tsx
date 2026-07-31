@@ -33,7 +33,7 @@ export const StageDisplayView: React.FC<StageDisplayViewProps> = ({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black text-white flex flex-col justify-between p-6 font-sans select-none overflow-hidden">
+    <div className="theme-locked-dark fixed inset-0 z-50 bg-black text-slate-100 flex flex-col justify-between p-6 font-sans select-none overflow-hidden">
       {/* Top Bar: Stage Clock & Indicator */}
       <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
         <div className="flex items-center gap-3">
@@ -54,7 +54,7 @@ export const StageDisplayView: React.FC<StageDisplayViewProps> = ({
 
           <button
             onClick={onExitStageView}
-            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 transition-colors"
+            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-slate-100 border border-zinc-800 transition-colors"
             title="Return to Operator Console"
           >
             <X className="w-5 h-5" />
@@ -80,7 +80,7 @@ export const StageDisplayView: React.FC<StageDisplayViewProps> = ({
               </h2>
             )}
 
-            <p className="text-3xl md:text-5xl font-black text-white leading-tight whitespace-pre-line tracking-tight drop-shadow-md">
+            <p className="text-3xl md:text-5xl font-black text-slate-100 leading-tight whitespace-pre-line tracking-tight drop-shadow-md">
               {liveSlide.body}
             </p>
 
