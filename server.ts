@@ -7,7 +7,9 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+// 3000 collides with almost every other dev server, so the console defaults to
+// an uncommon port. Override with PORT if 5730 is taken too.
+const PORT = Number(process.env.PORT) || 5730;
 
 // Every /api route carries text only, so a tight body cap is plenty and keeps
 // oversized payloads from ever reaching the JSON parser.
